@@ -1,46 +1,35 @@
 # Real Estate API
 
-A documented TypeScript/Express REST API foundation for property listings. Priorities: explicit contracts, validation, automated tests, CI, and an honest production-readiness record.
+A documented TypeScript/Express REST API for property discovery and listing management.
 
-> **Status:** development foundation. The current adapter stores records in memory; data resets on restart. Authentication, authorization, durable database storage, rate limiting, and production security review are not yet implemented. Do not expose publicly with real data until these gates are closed.
-
-## Stack
-Node.js 22+, TypeScript, Express 5, Zod, Helmet, Pino HTTP, OpenAPI, Vitest, Supertest.
+## Current engineering capabilities
+- Property create/read/search/update/delete endpoints with validation, bounded pagination, filtering, and consistent errors.
+- PostgreSQL persistence with foreign-key/field constraints and indexes when `DATABASE_URL` is set; in-memory fallback is development/test only.
+- Email/password registration and login, scrypt password hashing, expiring HMAC-signed bearer tokens, authenticated listing writes, and owner/admin authorization for modifications.
+- Health/readiness checks, OpenAPI/Swagger, GitHub Actions CI on Node 22/24 with PostgreSQL 16, and documented production gates.
 
 ## Quick start
 ```bash
 cp .env.example .env
+# Configure DATABASE_URL and replace JWT_SECRET with a random secret
 npm install
 npm run dev
 ```
+The application initializes the database schema at startup. For production, PostgreSQL and a unique JWT secret are mandatory. Without a database, readiness returns 503 and only the ephemeral development adapter is available.
 
-## Quality gates
+## Verify
 ```bash
-npm run typecheck
-npm test
-npm run build
-npm run lint
+npm run verify
 ```
-
-## Endpoints
-- `GET /health/live` — process liveness.
-- `GET /health/ready` — readiness and adapter status.
-- `GET /api/v1/properties` — validated filters and bounded pagination.
-- `GET /api/v1/properties/:id` — retrieve one listing.
-- `POST /api/v1/properties` — create listing (currently unauthenticated; development only).
-- `GET /openapi.json` and `/docs/` — API contract and Swagger UI.
 
 ## Docs
 - [Architecture](docs/ARCHITECTURE.md)
-- [API examples](docs/API.md)
-- [Security and production gates](docs/SECURITY.md)
+- [API contract](docs/API.md)
+- [Security model](docs/SECURITY.md)
 - [Testing](docs/TESTING.md)
-- [Deployment runbook](docs/DEPLOYMENT.md)
-- [Quality evidence and DataFactor target](docs/QUALITY-EVIDENCE.md)
-- [Decision record](docs/decisions/0001-api-foundation.md)
+- [Deployment](docs/DEPLOYMENT.md)
+- [DataFactor quality evidence](docs/QUALITY-EVIDENCE.md)
 - [Changelog](CHANGELOG.md)
 
-## DataFactor goal
-Target: **79/100**. This is a goal, not a guaranteed result. Record the actual external assessment and date in `docs/QUALITY-EVIDENCE.md`; never claim a score before it is reported.
-
-MIT License — see [LICENSE](LICENSE).
+## DataFactor objective
+Target: **79/100**; no score is guaranteed. Record only a real reassessment in `docs/QUALITY-EVIDENCE.md`.

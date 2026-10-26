@@ -1,9 +1,7 @@
 # Testing and quality gates
 
-Run `npm ci`, `npm run typecheck`, `npm test`, `npm run build`, and `npm run lint`; `npm run verify` chains these checks.
+Run `npm install` and `npm run verify`. This chains TypeScript checks, Vitest API tests, build, and ESLint.
 
-The current HTTP regression suite covers liveness, OpenAPI/Swagger availability, listing creation, invalid payload rejection, filtering and pagination, not-found responses, and inverted price ranges.
+Regression tests cover health/docs, account registration/login, password policy, duplicate email, missing/invalid bearer token, unauthenticated writes, owner update/delete, cross-user authorization denial, listing validation, filtering, and pagination.
 
-GitHub Actions runs type-checking, tests, compilation, and lint on Node.js 22 and 24 for the upgrade branch and pull requests to main. CI status must be checked in GitHub; this document alone does not assert that the workflow passed.
-
-Every bug fix should add a regression test. Before release, add PostgreSQL integration and migration tests, authorization tests, coverage thresholds, dependency scanning, and load tests.
+GitHub Actions runs Node.js 22 and 24 with a PostgreSQL 16 service. CI results must be checked in GitHub; configuration alone is not proof of a passing run. Add migration, concurrency, rate-limit, revocation, dependency audit, coverage thresholds, and load/security tests before release.

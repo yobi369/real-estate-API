@@ -1,18 +1,18 @@
 # Security model and production gates
 
-## Implemented baseline
-- Helmet security headers and disabled `X-Powered-By`.
-- JSON request limit of 1 MiB.
-- Strict Zod validation for listing payloads and bounded query parameters.
-- Configurable CORS allowlist.
-- Request IDs and redaction of authorization/cookie headers in HTTP logs.
-- Generic internal-error response and no secrets in `.env.example`.
+## Implemented
+- Helmet security headers, bounded JSON body (1 MiB), strict Zod input validation, configurable CORS, request IDs, and redacted authorization/cookie logs.
+- Registration enforces a 12-character password plus upper/lowercase and numeric characters; passwords are salted and derived with Node.js scrypt, never stored in plaintext.
+- HMAC-SHA256 signed bearer tokens have bounded expiry and signature verification using timing-safe comparison.
+- Listing creation requires authentication. Listing update/delete requires ownership; an `admin` role may be granted only through trusted database administration, never public registration.
+- Parameterized PostgreSQL queries, foreign keys, constraints, and indexes.
 
-## Blocking gaps — do not expose publicly yet
-1. Authentication and authorization are absent; listing creation is unauthenticated.
-2. Storage is ephemeral in-memory data.
-3. Rate limiting, ownership/tenant isolation, and audit trail are absent.
-4. No dependency/security scan, penetration test, load test, backup/restore test, or production deployment has been verified.
+## Still required before public launch
+- Configure production PostgreSQL, TLS/SSL connectivity, least-privilege DB user, backup and restore drills.
+- Add rate limiting, account lockout/abuse controls, password reset and email verification, token revocation/rotation strategy, audit events, monitoring, alerting, and request timeouts.
+- Admin role is not self-service; provision only through a secure, audited operator process. Review authorization and data access policy.
+- Complete dependency/secret scans, penetration test, load test, privacy/retention review, and deployment-specific smoke tests.
+- JWT secret must be unique, random, and managed in a secret store. Never commit production secrets.
 
-## Required before launch
-Implement OIDC/JWT verification and ownership-based authorization; PostgreSQL with migrations and least-privilege credentials; rate limits and request timeouts; exact production CORS; TLS; backup/restore drills; dependency and secret scans; monitoring/alerts; retention/privacy procedures; and independent security and load testing. Never trust a client-supplied user ID.
+## Honest readiness
+Production startup fails without `DATABASE_URL` and a non-default `JWT_SECRET`. Without a database URL, development uses an ephemeral adapter and readiness returns 503; this mode is for local development/tests only.
