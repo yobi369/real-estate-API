@@ -28,8 +28,4 @@ npm run verify
 - [Security model](docs/SECURITY.md)
 - [Testing](docs/TESTING.md)
 - [Deployment](docs/DEPLOYMENT.md)
-- [DataFactor quality evidence](docs/QUALITY-EVIDENCE.md)
 - [Changelog](CHANGELOG.md)
-
-## DataFactor objective
-Target: **79/100**; no score is guaranteed. Record only a real reassessment in `docs/QUALITY-EVIDENCE.md`.
