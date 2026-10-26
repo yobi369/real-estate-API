@@ -1,0 +1,27 @@
+import express from 'express';
+import cors from 'cors';
+import helmet from 'helmet';
+import pinoHttp from 'pino-http';
+import swaggerUi from 'swagger-ui-express';
+import { randomUUID } from 'node:crypto';
+import { config } from './config.js';
+import { propertyInputSchema, propertyQuerySchema } from './domain/property.js';
+import { PropertyRepository } from './repositories/property-repository.js';
+
+export const app = express();
+export const propertyRepository = new PropertyRepository();
+app.disable('x-powered-by');
+app.use(helmet());
+app.use(cors({ origin: config.CORS_ORIGIN.split(',').map(v => v.trim()), credentials: false }));
+app.use(express.json({ limit: '1mb', strict: true }));
+app.use(pinoHttp({ level: config.LOG_LEVEL, genReqId: (req,res) => { const h=req.headers['x-request-id']; const id=typeof h==='string' && /^[a-zA-Z0-9._-]{1,100}$/.test(h) ? h : randomUUID(); res.setHeader('x-request-id',id); return id; }, redact: ['req.headers.authorization','req.headers.cookie'] }));
+const spec = { openapi:'3.1.0', info:{title:'Real Estate API',version:'1.0.0'}, paths:{ '/health/live':{get:{summary:'Liveness',responses:{'200':{description:'Alive'}}}}, '/health/ready':{get:{summary:'Readiness',responses:{'200':{description:'Ready'}}}}, '/api/v1/properties':{get:{summary:'Search listings',responses:{'200':{description:'Paginated results'},'400':{description:'Invalid query'}}},post:{summary:'Create listing (development only)',responses:{'201':{description:'Created'},'400':{description:'Invalid input'}}}}, '/api/v1/properties/{id}':{get:{summary:'Fetch listing',parameters:[{in:'path',name:'id',required:true,schema:{type:'string'}}],responses:{'200':{description:'Found'},'404':{description:'Not found'}}}} } };
+app.get('/health/live',(_req,res)=>res.json({status:'ok',service:'real-estate-api'}));
+app.get('/health/ready',(_req,res)=>res.json({status:'ready',persistence:'in-memory-development-adapter'}));
+app.get('/openapi.json',(_req,res)=>res.json(spec));
+app.use('/docs',swaggerUi.serve,swaggerUi.setup(spec));
+app.get('/api/v1/properties',(req,res)=>{ const parsed=propertyQuerySchema.safeParse(req.query); if(!parsed.success) return res.status(400).json({error:{code:'VALIDATION_ERROR',message:'Query parameters are invalid',details:parsed.error.flatten()}}); return res.json({data:propertyRepository.list(parsed.data)}); });
+app.get('/api/v1/properties/:id',(req,res)=>{ const property=propertyRepository.getById(req.params.id); if(!property) return res.status(404).json({error:{code:'PROPERTY_NOT_FOUND',message:'Property was not found'}}); return res.json({data:property}); });
+app.post('/api/v1/properties',(req,res)=>{ const parsed=propertyInputSchema.safeParse(req.body); if(!parsed.success) return res.status(400).json({error:{code:'VALIDATION_ERROR',message:'Property payload is invalid',details:parsed.error.flatten()}}); const property=propertyRepository.create(parsed.data); return res.status(201).location(`/api/v1/properties/${property.id}`).json({data:property}); });
+app.use((_req,res)=>res.status(404).json({error:{code:'NOT_FOUND',message:'Route was not found'}}));
+app.use((error: unknown,_req: express.Request,res: express.Response,_next: express.NextFunction)=>{ app.emit('application-error',error); if(res.headersSent) return; return res.status(500).json({error:{code:'INTERNAL_ERROR',message:'An unexpected error occurred'}}); });
