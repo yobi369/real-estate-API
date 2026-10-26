@@ -1,4 +1,5 @@
 import { app } from './app.js';
+import { config } from './config.js';
 import { migrate,pool } from './db.js';
 const start=async()=>{await migrate();return app.listen(config.PORT,'0.0.0.0',()=>app.emit('server-ready'));};
 const serverPromise=start();
