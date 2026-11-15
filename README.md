@@ -18,7 +18,8 @@ The demo inventory is isolated from customer listings. It is not a live marketpl
 
 - Property create/read/search/update/delete endpoints with validation, bounded pagination, filtering and consistent errors.
 - PostgreSQL persistence with foreign-key/field constraints and indexes when `DATABASE_URL` is set; in-memory fallback is development/test only.
-- Email/password registration and login, scrypt password hashing, expiring HMAC-signed bearer tokens, authenticated listing writes, and owner/admin authorization for modifications.
+- Email/password registration and login, scrypt password hashing, expiring HMAC-signed bearer tokens, administrator-only listing publication, one-time first-admin bootstrap, and owner/admin authorization for modifications.
+- Public enquiry submission with PostgreSQL persistence and an administrator-only enquiry inbox.
 - Health/readiness checks, OpenAPI/Swagger, GitHub Actions CI on Node 22/24 with PostgreSQL 16, and documented production gates.
 - Read-only demo endpoint at `GET /demo/properties`, with city, type, transaction, price and text filters.
 
@@ -31,7 +32,7 @@ npm install
 npm run dev
 ```
 
-The application initializes the database schema at startup. For production, PostgreSQL and a unique JWT secret are mandatory. Without a database, readiness returns 503 and only the ephemeral development adapter is available.
+The application initializes the database schema at startup. For production, PostgreSQL and a unique JWT secret are mandatory. Set a temporary `ADMIN_BOOTSTRAP_TOKEN` (at least 32 characters) to create the first agency administrator through `POST /api/v1/admin/bootstrap`, then remove the token from the environment. Only administrators can publish listings. Without a database, readiness returns 503 and only the ephemeral development adapter is available.
 
 ## Verify
 
