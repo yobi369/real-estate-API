@@ -35,6 +35,10 @@ describe('website listing categories', () => {
     const search = await request(app).get('/api/v1/properties?category=airbnb');
     expect(search.body.data.total).toBe(1);
     expect(search.body.data.items[0].location).toBe('Kamakis');
+    expect(search.body.data.items[0].ownerId).toBeUndefined();
+    const detail = await request(app).get('/api/v1/properties/' + response.body.data.id);
+    expect(detail.status).toBe(200);
+    expect(detail.body.data.ownerId).toBeUndefined();
   });
 
   it('keeps land category distinct from property type', async () => {
