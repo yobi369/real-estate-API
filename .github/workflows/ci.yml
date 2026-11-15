@@ -28,6 +28,7 @@ jobs:
       NODE_ENV: test
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/real_estate_api
       JWT_SECRET: ci-only-test-secret-please-never-use-in-production-123
+      ADMIN_BOOTSTRAP_TOKEN: ci-only-bootstrap-token-never-use-in-production-123456
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
