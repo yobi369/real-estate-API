@@ -1,9 +1,9 @@
 name: CI
 on:
   push:
-    branches: [main, 'upgrade/**']
+    branches: [main, 'upgrade/**', 'sales/**', 'integration/**']
   pull_request:
-    branches: [main]
+    branches: [main, 'sales/**']
   workflow_dispatch:
 permissions:
   contents: read
