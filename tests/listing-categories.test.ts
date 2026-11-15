@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import request from 'supertest';
 import { app, propertyRepository } from '../src/app.js';
+import { bootstrapAdmin, resetMemoryUsersForTests } from '../src/auth.js';
+import { config } from '../src/config.js';
 import { migrate } from '../src/db.js';
 
 const operator = { email: 'category-operator@example.com', password: 'StrongPassword123' };
@@ -8,14 +10,20 @@ const operator = { email: 'category-operator@example.com', password: 'StrongPass
 describe('website listing categories', () => {
   beforeEach(async () => {
     await migrate();
-    await propertyRepository.clear();
+    resetMemoryUsersForTests();
+    if (process.env.DATABASE_URL) await (await import('../src/db.js')).pool?.query('TRUNCATE TABLE inquiries, properties, users CASCADE');
+    else await propertyRepository.clear();
   });
+  const createAdmin = async (email: string) => {
+    const result = await bootstrapAdmin({ email, password: 'StrongPassword123' }, config.ADMIN_BOOTSTRAP_TOKEN ?? '');
+    if ('error' in result) throw new Error('Unable to bootstrap test administrator: ' + result.error);
+    return result.token;
+  };
 
   it('stores and returns a short-stay listing with nightly pricing', async () => {
-    const auth = await request(app).post('/api/v1/auth/register').send(operator);
-    expect(auth.status).toBe(201);
+    const adminToken = await createAdmin(operator.email);
     const response = await request(app).post('/api/v1/properties')
-      .set('Authorization', 'Bearer ' + auth.body.data.token)
+      .set('Authorization', 'Bearer ' + adminToken)
       .send({
         title: 'Kamakis Executive Stay',
         description: 'Furnished short-stay apartment.',
@@ -42,10 +50,10 @@ describe('website listing categories', () => {
   });
 
   it('keeps land category distinct from property type', async () => {
-    const auth = await request(app).post('/api/v1/auth/register')
-      .send({ email: 'land-operator@example.com', password: 'StrongPassword123' });
+    .set('Authorization', 'Bearer ' + await createAdmin('land-operator@example.com'));
     const response = await request(app).post('/api/v1/properties')
-      .set('Authorization', 'Bearer ' + auth.body.data.token)
+    const response = await request(app).post('/api/v1/properties')
+      .set('Authorization', 'Bearer ' + await createAdmin('land-operator@example.com'))
       .send({
         title: 'Kithimani Plot',
         description: 'Residential plot.',
