@@ -1,18 +1,16 @@
 {
   "name": "real-estate-api",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "private": true,
-  "description": "Validated, authenticated, PostgreSQL-backed property listing REST API",
+  "description": "PostgreSQL-backed real estate inventory and customer enquiry API",
   "license": "MIT",
-  "engines": {
-    "node": ">=22"
-  },
+  "engines": { "node": ">=22" },
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "start": "node dist/src/server.js",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "vitest run",
+    "test": "vitest run --maxWorkers=1 --minWorkers=1",
     "lint": "eslint .",
     "verify": "npm run typecheck && npm test && npm run build && npm run lint"
   },
