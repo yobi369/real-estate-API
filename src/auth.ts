@@ -18,6 +18,35 @@ function signToken(principal:Principal):string{const b64=(v:unknown)=>Buffer.fro
 function decodeToken(token:string):Principal|null{try{const parts=token.split('.');if(parts.length!==3)return null;const [h,p,s]=parts as [string,string,string];const expected=createHmac('sha256',config.JWT_SECRET).update(`${h}.${p}`).digest();const received=Buffer.from(s,'base64url');if(received.length!==expected.length||!timingSafeEqual(received,expected))return null;const header=JSON.parse(Buffer.from(h,'base64url').toString()) as {alg?:string};const payload=JSON.parse(Buffer.from(p,'base64url').toString()) as {sub?:string,email?:string,role?:Role,exp?:number};if(header.alg!=='HS256'||!payload.sub||!payload.email||!['user','admin'].includes(payload.role??'')||!payload.exp||payload.exp<=Math.floor(Date.now()/1000))return null;return {id:payload.sub,email:payload.email,role:payload.role!};}catch{return null;}}
 export async function registerUser(input:unknown):Promise<{principal:Principal,token:string}|{error:'INVALID'|'EXISTS'}>{const parsed=registration.safeParse(input);if(!parsed.success)return {error:'INVALID'};const {email,password}=parsed.data;const passwordHash=await hashPassword(password);if(pool){try{const id=randomUUID();const r=await pool.query<{id:string,email:string,role:Role}>('INSERT INTO users(id,email,password_hash,role) VALUES($1,$2,$3,$4) RETURNING id,email,role',[id,email,passwordHash,'user']);const principal=r.rows[0]!;return {principal,token:signToken(principal)};}catch(e){if((e as {code?:string}).code==='23505')return {error:'EXISTS'};throw e;}}
 if([...memoryUsers.values()].some(u=>u.email===email))return {error:'EXISTS'};const user={id:randomUUID(),email,passwordHash,role:'user' as const};memoryUsers.set(user.id,user);const principal={id:user.id,email:user.email,role:user.role};return {principal,token:signToken(principal)};}
+export async function bootstrapAdmin(input:unknown,token:string):Promise<{principal:Principal,token:string}|{error:'DISABLED'|'INVALID'|'EXISTS'}>{
+ const configured=config.ADMIN_BOOTSTRAP_TOKEN;
+ if(!configured)return {error:'DISABLED'};
+ const candidate=Buffer.from(token);const expected=Buffer.from(configured);
+ if(candidate.length!==expected.length||!timingSafeEqual(candidate,expected))return {error:'DISABLED'};
+ const parsed=registration.safeParse(input);if(!parsed.success)return {error:'INVALID'};
+ const {email,password}=parsed.data;const passwordHash=await hashPassword(password);
+ if(pool){
+  const client=await pool.connect();
+  try{
+   await client.query('BEGIN');
+   await client.query('SELECT pg_advisory_xact_lock(2026111502)');
+   const existing=await client.query("SELECT id FROM users WHERE role='admin' LIMIT 1");
+   if(existing.rows.length){await client.query('ROLLBACK');return {error:'EXISTS'};}
+   const id=randomUUID();
+   const created=await client.query<{id:string,email:string,role:Role}>('INSERT INTO users(id,email,password_hash,role) VALUES($1,$2,$3,$4) RETURNING id,email,role',[id,email,passwordHash,'admin']);
+   await client.query('COMMIT');
+   const principal=created.rows[0]!;
+   return {principal,token:signToken(principal)};
+  }catch(error){
+   await client.query('ROLLBACK');
+   if((error as {code?:string}).code==='23505')return {error:'EXISTS'};
+   throw error;
+  }finally{client.release();}
+ }
+ if([...memoryUsers.values()].some(u=>u.role==='admin'||u.email===email))return {error:'EXISTS'};
+ const user={id:randomUUID(),email,passwordHash,role:'admin' as const};memoryUsers.set(user.id,user);
+ const principal={id:user.id,email:user.email,role:user.role};return {principal,token:signToken(principal)};
+}
 export async function loginUser(input:unknown):Promise<{principal:Principal,token:string}|null>{const parsed=loginSchema.safeParse(input);if(!parsed.success)return null;const {email,password}=parsed.data;let user:{id:string,email:string,password_hash:string,role:Role}|undefined;if(pool){const r=await pool.query<{id:string,email:string,password_hash:string,role:Role}>('SELECT id,email,password_hash,role FROM users WHERE email=$1',[email]);user=r.rows[0];}else{const found=[...memoryUsers.values()].find(u=>u.email===email);if(found)user={id:found.id,email:found.email,password_hash:found.passwordHash,role:found.role};}if(!user||!(await verifyPassword(password,user.password_hash)))return null;const principal={id:user.id,email:user.email,role:user.role};return {principal,token:signToken(principal)};}
 export function authenticate(req:Request,res:Response,next:NextFunction):void{const header=req.headers.authorization;const match=typeof header==='string'?/^Bearer ([A-Za-z0-9._~-]+)$/.exec(header):null;const principal=match?decodeToken(match[1]!):null;if(!principal){res.status(401).json({error:{code:'UNAUTHENTICATED',message:'A valid bearer token is required'}});return;}req.principal=principal;next();}
 export function requireOwnerOrAdmin(ownerId:string,principal:Principal):boolean{return principal.role==='admin'||ownerId===principal.id;}
