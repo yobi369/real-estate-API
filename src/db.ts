@@ -63,6 +63,14 @@ export async function migrate(): Promise<void> {
       CREATE INDEX IF NOT EXISTS properties_city_idx ON properties (lower(city));
       CREATE INDEX IF NOT EXISTS properties_price_idx ON properties (price);
       CREATE INDEX IF NOT EXISTS properties_owner_idx ON properties (owner_id);
+      CREATE TABLE IF NOT EXISTS media_assets (
+        id uuid PRIMARY KEY,
+        content_type text NOT NULL CHECK (content_type IN ('image/jpeg','image/png','image/webp')),
+        data bytea NOT NULL,
+        byte_size integer NOT NULL CHECK (byte_size > 0 AND byte_size <= 5242880),
+        created_at timestamptz NOT NULL DEFAULT now()
+      );
+      CREATE INDEX IF NOT EXISTS media_assets_created_at_idx ON media_assets (created_at);
       CREATE TABLE IF NOT EXISTS inquiries (
         id uuid PRIMARY KEY,
         listing_id uuid REFERENCES properties(id) ON DELETE SET NULL,
