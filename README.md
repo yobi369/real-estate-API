@@ -1,31 +1,58 @@
 # Real Estate API
 
-A documented TypeScript/Express REST API for property discovery and listing management.
+A documented TypeScript/Express REST API for property discovery and listing management, with a buyer-facing interactive demonstration using fictional Kenyan sample records.
+
+## Product demonstration
+
+After deployment, visit:
+
+- `/demo/` — interactive property search showcase (fictional sample records only).
+- `/docs/` — Swagger UI.
+- `/openapi.json` — OpenAPI document.
+- `/health/live` — process liveness.
+- `/health/ready` — database readiness.
+
+The demo inventory is isolated from customer listings. It is not a live marketplace and does not represent actual property offers, valuations or availability.
 
 ## Current engineering capabilities
-- Property create/read/search/update/delete endpoints with validation, bounded pagination, filtering, and consistent errors.
+
+- Property create/read/search/update/delete endpoints with validation, bounded pagination, filtering and consistent errors.
 - PostgreSQL persistence with foreign-key/field constraints and indexes when `DATABASE_URL` is set; in-memory fallback is development/test only.
 - Email/password registration and login, scrypt password hashing, expiring HMAC-signed bearer tokens, authenticated listing writes, and owner/admin authorization for modifications.
 - Health/readiness checks, OpenAPI/Swagger, GitHub Actions CI on Node 22/24 with PostgreSQL 16, and documented production gates.
+- Read-only demo endpoint at `GET /demo/properties`, with city, type, transaction, price and text filters.
 
 ## Quick start
+
 ```bash
 cp .env.example .env
 # Configure DATABASE_URL and replace JWT_SECRET with a random secret
 npm install
 npm run dev
 ```
+
 The application initializes the database schema at startup. For production, PostgreSQL and a unique JWT secret are mandatory. Without a database, readiness returns 503 and only the ephemeral development adapter is available.
 
 ## Verify
+
 ```bash
 npm run verify
 ```
 
-## Docs
+## Commercial pilot
+
+See [the integration pilot proposal](docs/COMMERCIAL-PILOT-PROPOSAL.md) for the indicative scope, pricing and commercial boundaries.
+
+## Production deployment
+
+See [the production-readiness checklist](docs/PRODUCTION-READINESS.md) before using customer or personal data. The public demo is not a production customer environment.
+
+## Technical documentation
+
 - [Architecture](docs/ARCHITECTURE.md)
 - [API contract](docs/API.md)
 - [Security model](docs/SECURITY.md)
 - [Testing](docs/TESTING.md)
 - [Deployment](docs/DEPLOYMENT.md)
+- [Quality evidence](docs/QUALITY-EVIDENCE.md)
 - [Changelog](CHANGELOG.md)
