@@ -5,7 +5,7 @@ import { resetMemoryUsersForTests } from '../src/auth.js';
 import { config } from '../src/config.js';
 import { migrate, pool } from '../src/db.js';
 
-const bootstrapToken = config.ADMIN_BOOTSTRAP_TOKEN;
+const bootstrapToken = config.ADMIN_BOOTSTRAP_TOKEN ?? '';
 
 beforeEach(async () => {
   await migrate();
@@ -23,7 +23,7 @@ describe('one-time administrator bootstrap', () => {
 
   it('creates exactly one administrator and grants inbox access', async () => {
     const response = await request(app).post('/api/v1/admin/bootstrap')
-      .set('x-bootstrap-token', bootstrapToken ?? ''
+      .set('x-bootstrap-token', bootstrapToken)
       .send({ email: 'agency-admin@example.com', password: 'StrongPassword123' });
     expect(response.status).toBe(201);
     expect(response.body.data.user.role).toBe('admin');
@@ -33,7 +33,7 @@ describe('one-time administrator bootstrap', () => {
     expect(inbox.status).toBe(200);
 
     const second = await request(app).post('/api/v1/admin/bootstrap')
-      .set('x-bootstrap-token', bootstrapToken!)
+      .set('x-bootstrap-token', bootstrapToken)
       .send({ email: 'second-admin@example.com', password: 'AnotherStrongPassword123' });
     expect(second.status).toBe(409);
   });
