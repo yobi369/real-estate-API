@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Interactive demonstration of a Kenyan property listings API using fictional sample records.">
+  <title>Property Inventory API | Live Demo</title>
+  <link rel="stylesheet" href="/demo/style.css">
+  <script src="/demo/app.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/demo/"><span class="brand-mark">P</span><span>PROPERTY<span class="brand-light">API</span></span></a>
+    <span class="demo-pill">INTERACTIVE DEMO</span>
+    <a class="docs-link" href="/docs/">API documentation ↗</a>
+  </header>
+  <main>
+    <section class="hero">
+      <p class="eyebrow">PROPERTY DATA · SEARCH · INTEGRATION</p>
+      <h1>One inventory.<br><em>Connected property experiences.</em></h1>
+      <p class="intro">Explore how a property company can search and retrieve structured listings through a documented REST API.</p>
+      <div class="hero-meta"><span><i></i> Sample environment</span><span>Kenya · KES</span><span>Read-only showcase</span></div>
+    </section>
+    <section class="search-panel" aria-label="Property search filters">
+      <div class="panel-heading"><div><p class="eyebrow">DISCOVER INVENTORY</p><h2>Find a property</h2></div><span id="result-count" class="result-count">Loading sample data…</span></div>
+      <form id="filters">
+        <label>Location<input name="city" placeholder="e.g. Nairobi, Machakos"></label>
+        <label>Property type<select name="propertyType"><option value="">All types</option><option value="apartment">Apartment</option><option value="house">House</option><option value="land">Land</option><option value="commercial">Commercial</option></select></label>
+        <label>Listing purpose<select name="transactionType"><option value="">Sale or rent</option><option value="sale">For sale</option><option value="rent">For rent</option><option value="lease">For lease</option></select></label>
+        <label>Maximum price (KES)<input name="maxPrice" type="number" min="0" step="1000" placeholder="No maximum"></label>
+        <button type="submit">Search properties <span>→</span></button>
+      </form>
+      <div class="quick-filters"><span>Try:</span><button type="button" data-city="Nairobi">Nairobi</button><button type="button" data-city="Machakos">Machakos</button><button type="button" data-type="land">Land</button><button type="button" data-purpose="rent">Rentals</button><button type="button" id="reset">Reset filters</button></div>
+    </section>
+    <section class="results-section">
+      <div class="section-heading"><div><p class="eyebrow">SAMPLE PROPERTY INVENTORY</p><h2>Available records</h2></div><span class="sample-note">All listings below are fictional demo data</span></div>
+      <div id="properties" class="property-grid" aria-live="polite"><div class="loading">Loading sample properties…</div></div>
+      <div class="api-preview"><div><p class="eyebrow">UNDER THE HOOD</p><h3>Same search, structured API response</h3><p>Use the endpoint directly or connect it to an existing website, application or internal dashboard.</p></div><code id="endpoint">GET /demo/properties?page=1&amp;limit=6</code><a href="/docs/">Explore Swagger docs ↗</a></div>
+    </section>
+    <section class="integration">
+      <div><p class="eyebrow">BUILT FOR INTEGRATION</p><h2>Keep your website.<br><em>Connect your inventory.</em></h2></div>
+      <p>This demonstration shows the search experience and API response shape. A client pilot would connect an agreed workflow to the company's own approved data, hosting and website environment.</p>
+    </section>
+  </main>
+  <footer><span>Property Inventory API · Built by Brian Mutunga</span><a href="https://github.com/yobi369/real-estate-API">View source on GitHub ↗</a></footer>
+</body>
+</html>
