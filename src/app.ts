@@ -17,7 +17,18 @@ export const app=express();
 export const propertyRepository=new PropertyRepository();
 export const inquiryRepository=new InquiryRepository();
 const toPublicProperty=(property:StoredProperty)=>{const {ownerId,...publicFields}=property;void ownerId;return publicFields;};
-app.disable('x-powered-by');app.use(helmet());
+const inquiryRateLimits=new Map<string,{count:number;resetAt:number}>();
+const inquiryRateLimit:express.RequestHandler=(req,res,next)=>{
+ const now=Date.now();const key=req.ip||req.socket.remoteAddress||'unknown';
+ let entry=inquiryRateLimits.get(key);
+ if(!entry||entry.resetAt<=now){entry={count:0,resetAt:now+15*60*1000};}
+ if(entry.count>=10){res.setHeader('Retry-After',String(Math.max(1,Math.ceil((entry.resetAt-now)/1000))));return res.status(429).json({error:{code:'RATE_LIMITED',message:'Too many enquiries. Please try again later.'}});}
+ entry.count+=1;inquiryRateLimits.set(key,entry);
+ if(inquiryRateLimits.size>5000){for(const [ip,value] of inquiryRateLimits){if(value.resetAt<=now)inquiryRateLimits.delete(ip);}}
+ return next();
+};
+
+app.disable('x-powered-by');app.set('trust proxy',1);app.use(helmet());
 app.use(cors({origin:config.CORS_ORIGIN.split(',').map(v=>v.trim()),credentials:false}));
 app.use(express.json({limit:'1mb',strict:true}));
 app.use(pinoHttp({level:config.LOG_LEVEL,genReqId:(req,res)=>{const h=req.headers['x-request-id'];const id=typeof h==='string'&&/^[a-zA-Z0-9._-]{1,100}$/.test(h)?h:randomUUID();res.setHeader('x-request-id',id);return id;},redact:['req.headers.authorization','req.headers.cookie']}));
@@ -51,7 +62,7 @@ app.get('/api/v1/properties/:id',async(req,res)=>{const p=await propertyReposito
 app.post('/api/v1/properties',authenticate,async(req,res)=>{if(req.principal?.role!=='admin')return res.status(403).json({error:{code:'FORBIDDEN',message:'Administrator permission is required to publish listings'}});const parsed=propertyInputSchema.safeParse(req.body);if(!parsed.success)return res.status(400).json({error:{code:'VALIDATION_ERROR',message:'Property payload is invalid',details:parsed.error.flatten()}});const p=await propertyRepository.create(parsed.data,req.principal!.id);return res.status(201).location(`/api/v1/properties/${p.id}`).json({data:p});});
 app.patch('/api/v1/properties/:id',authenticate,async(req,res)=>{const current=await propertyRepository.getById(String(req.params.id));if(!current)return res.status(404).json({error:{code:'PROPERTY_NOT_FOUND',message:'Property was not found'}});if(!requireOwnerOrAdmin(current.ownerId,req.principal!))return res.status(403).json({error:{code:'FORBIDDEN',message:'You may only modify your own listings'}});const parsed=propertyInputSchema.safeParse(req.body);if(!parsed.success)return res.status(400).json({error:{code:'VALIDATION_ERROR',message:'Property payload is invalid',details:parsed.error.flatten()}});return res.json({data:await propertyRepository.update(String(req.params.id),parsed.data)});});
 app.delete('/api/v1/properties/:id',authenticate,async(req,res)=>{const current=await propertyRepository.getById(String(req.params.id));if(!current)return res.status(404).json({error:{code:'PROPERTY_NOT_FOUND',message:'Property was not found'}});if(!requireOwnerOrAdmin(current.ownerId,req.principal!))return res.status(403).json({error:{code:'FORBIDDEN',message:'You may only delete your own listings'}});await propertyRepository.delete(String(req.params.id));return res.status(204).end();});
-app.post('/api/v1/inquiries',async(req,res)=>{const parsed=inquiryInputSchema.safeParse(req.body);if(!parsed.success)return res.status(400).json({error:{code:'VALIDATION_ERROR',message:'Inquiry payload is invalid',details:parsed.error.flatten()}});return res.status(201).json({data:await inquiryRepository.create(parsed.data)});});
+app.post('/api/v1/inquiries',inquiryRateLimit,async(req,res)=>{const parsed=inquiryInputSchema.safeParse(req.body);if(!parsed.success)return res.status(400).json({error:{code:'VALIDATION_ERROR',message:'Inquiry payload is invalid',details:parsed.error.flatten()}});return res.status(201).json({data:await inquiryRepository.create(parsed.data)});});
 app.get('/api/v1/inquiries',authenticate,async(req,res)=>{if(req.principal?.role!=='admin')return res.status(403).json({error:{code:'FORBIDDEN',message:'Admin permission is required'}});return res.json({data:{items:await inquiryRepository.list(100)}});});
 app.use('/demo',express.static(resolve(process.cwd(),'public/demo'),{index:'index.html'}));
 app.use((_req,res)=>res.status(404).json({error:{code:'NOT_FOUND',message:'Route was not found'}}));
