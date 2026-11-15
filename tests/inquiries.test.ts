@@ -9,4 +9,6 @@ describe('customer enquiries',()=>{
  it('rejects malformed contact details',async()=>{expect((await request(app).post('/api/v1/inquiries').send({...payload,email:'not-an-email'})).status).toBe(400);});
  it('does not expose the enquiry inbox publicly',async()=>{expect((await request(app).get('/api/v1/inquiries')).status).toBe(401);});
  it('rejects non-admin users from the enquiry inbox',async()=>{const r=await request(app).post('/api/v1/auth/register').send({email:'agent@example.com',password:'StrongPassword123'});expect(r.status).toBe(201);expect((await request(app).get('/api/v1/inquiries').set('Authorization',`Bearer ${r.body.data.token}`)).status).toBe(403);});
+
+ it('rate-limits repeated public enquiry submissions by client IP',async()=>{const client='203.0.113.77';for(let i=0;i<10;i++){const accepted=await request(app).post('/api/v1/inquiries').set('X-Forwarded-For',client).send({...payload,email:`buyer${i}@example.com`});expect(accepted.status).toBe(201);}const blocked=await request(app).post('/api/v1/inquiries').set('X-Forwarded-For',client).send(payload);expect(blocked.status).toBe(429);expect(blocked.body.error.code).toBe('RATE_LIMITED');});
 });
