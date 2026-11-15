@@ -2,9 +2,10 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import request from 'supertest';
 import { app } from '../src/app.js';
 import { resetMemoryUsersForTests } from '../src/auth.js';
+import { config } from '../src/config.js';
 import { migrate, pool } from '../src/db.js';
 
-const bootstrapToken = process.env.ADMIN_BOOTSTRAP_TOKEN;
+const bootstrapToken = config.ADMIN_BOOTSTRAP_TOKEN;
 
 beforeEach(async () => {
   await migrate();
@@ -20,9 +21,9 @@ describe('one-time administrator bootstrap', () => {
     expect(response.status).toBe(404);
   });
 
-  it.skipIf(!bootstrapToken)('creates exactly one administrator and grants inbox access', async () => {
+  it('creates exactly one administrator and grants inbox access', async () => {
     const response = await request(app).post('/api/v1/admin/bootstrap')
-      .set('x-bootstrap-token', bootstrapToken!)
+      .set('x-bootstrap-token', bootstrapToken ?? ''
       .send({ email: 'agency-admin@example.com', password: 'StrongPassword123' });
     expect(response.status).toBe(201);
     expect(response.body.data.user.role).toBe('admin');
