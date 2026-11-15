@@ -9,7 +9,8 @@ This checklist separates existing engineering capabilities from work still requi
 - [x] Ephemeral in-memory adapter restricted to development/test; readiness returns 503 without PostgreSQL.
 - [x] Password hashing using Node.js scrypt.
 - [x] Expiring HMAC-signed bearer tokens and owner/admin checks for listing writes.
-- [x] Input validation, Helmet headers, bounded JSON body, configurable CORS and redacted authorization logging.
+- [x] Input validation, Helmet headers, bounded JSON body, configurable CORS and redacted authorization/cookie/bootstrap-token logging.
+- [x] Rate limiting for public customer enquiries (10 per client IP per 15 minutes per API process).
 - [x] Health/readiness endpoints and Swagger UI/OpenAPI endpoint.
 - [x] CI verification against Node 22/24 and PostgreSQL 16 (see QUALITY-EVIDENCE.md).
 - [x] Isolated fictional sample data and read-only search endpoint for the public demonstration.
@@ -25,10 +26,11 @@ This checklist separates existing engineering capabilities from work still requi
 - [ ] Configure production CORS to only the customer's approved origins.
 
 ### Identity and application security
-- [ ] Add rate limiting and abuse controls for authentication and public search.
+- [ ] Add shared/distributed rate limiting and abuse controls for authentication and public search; the current enquiry limiter is process-local.
 - [ ] Implement email verification and secure password reset.
 - [ ] Define token revocation/rotation and account/session lifecycle.
-- [ ] Review admin provisioning and add auditable operator actions.
+- [x] Add one-time secret-protected bootstrap for the first administrator; remove the bootstrap secret after setup.
+- [ ] Add auditable operator actions and administrator lifecycle/recovery procedures.
 - [ ] Add security audit events for sensitive listing and account changes.
 - [ ] Complete dependency, secret and static-analysis scans; resolve material findings.
 - [ ] Conduct independent security review and penetration testing.
