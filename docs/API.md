@@ -1,27 +1,31 @@
 # API contract
 
-Base path: `/api/v1`. Listing reads are public; writes require `Authorization: Bearer <token>`.
+Base path: `/api/v1`. Public listing reads and customer enquiry submissions are available without an account. Listing writes require a bearer token. The enquiry inbox is restricted to admin users.
 
-## Register
-`POST /api/v1/auth/register` with `{"email":"seller@example.com","password":"StrongPassword123"}`. Passwords require at least 12 characters with lowercase, uppercase, and a number. Returns 201 and a bearer token. Duplicate email returns 409.
+## Register and login
+- `POST /api/v1/auth/register` with `{"email":"seller@example.com","password":"StrongPassword123"}`. Passwords require at least 12 characters with lowercase, uppercase, and a number.
+- `POST /api/v1/auth/login` with email and password. Returns a short-lived bearer token.
 
-## Login
-`POST /api/v1/auth/login` with email and password. Returns a short-lived bearer token; invalid credentials return the same generic 401 response.
+## Public listing search
+`GET /api/v1/properties?page=1&limit=20&category=property&city=Nairobi&propertyType=apartment&transactionType=sale&minPrice=1000000&maxPrice=20000000&search=riverside`
 
-## Create listing
+Supported categories are `property`, `airbnb`, and `land`. Category is distinct from property type: a short-stay apartment uses category `airbnb`, property type `apartment`, transaction type `rent`, and price type `night`.
+
+## Create and manage listings
 `POST /api/v1/properties` with bearer token and JSON:
 ```json
-{"title":"Coastal family home","description":"Bright home near amenities.","price":12500000,"currency":"KES","propertyType":"house","transactionType":"sale","bedrooms":3,"bathrooms":2,"city":"Mombasa","country":"Kenya","imageUrls":[]}
+{"title":"Coastal family home","description":"Bright home near amenities.","category":"property","price":12500000,"priceType":"total","currency":"KES","propertyType":"house","transactionType":"sale","bedrooms":3,"bathrooms":2,"city":"Mombasa","location":"Nyali","address":"Nyali, Mombasa, Kenya","country":"Kenya","areaSqm":180,"sizeAcres":0,"featured":false,"imageUrls":[]}
 ```
-Owner identity is derived from the verified token, never from request input.
+Owner identity is derived from the verified token. `GET /api/v1/properties/{id}` reads a listing. `PATCH` and `DELETE` require the owner or an admin.
 
-## Search
-`GET /api/v1/properties?page=1&limit=20&city=Mombasa&propertyType=house&minPrice=1000000&maxPrice=20000000&search=coastal`. Page defaults to 1, limit to 20 and max 100. Search supports city, type, transaction, price range, and text.
+## Customer enquiries
+`POST /api/v1/inquiries` stores contact messages, property viewing requests, short-stay booking requests, and land site-visit requests. It accepts requestType (`general`, `booking`, `viewing`, or `site_visit`), name, email, phone, message, and optional service/listing/date/guest/pickup details. A success response is returned only after the repository has stored the enquiry.
+`GET /api/v1/inquiries` returns the latest 100 enquiries and requires an admin bearer token. Standard registered users receive 403. Public registration cannot assign roles; agency operators must be promoted through a controlled database administration procedure.
 
-## Read/update/delete
-- `GET /api/v1/properties/{id}` — public read.
-- `PATCH /api/v1/properties/{id}` — authenticated owner or admin; currently expects a complete validated property object.
-- `DELETE /api/v1/properties/{id}` — authenticated owner or admin.
+## Health and documentation
+- `GET /health/live`
+- `GET /health/ready` — returns 200 only when PostgreSQL is configured and reachable.
+- `GET /openapi.json`
+- `GET /docs/`
 
-## Health/docs
-`GET /health/live`, `/health/ready`, `/openapi.json`, `/docs/`.
+Production requires PostgreSQL, a unique `JWT_SECRET`, and a `CORS_ORIGIN` allowlist containing the website origin.
