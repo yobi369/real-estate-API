@@ -88,7 +88,7 @@ app.get('/api/v1/media/:id',async(req,res)=>{
  const result=await pool.query<{content_type:string,data:Buffer}>('SELECT content_type,data FROM media_assets WHERE id=$1',[id]);
  const asset=result.rows[0];if(!asset)return res.status(404).end();
  res.setHeader('Content-Type',asset.content_type);res.setHeader('Content-Length',asset.data.length);
- res.setHeader('Cache-Control','public, max-age=31536000, immutable');res.setHeader('X-Content-Type-Options','nosniff');
+ res.setHeader('Cache-Control','public, max-age=31536000, immutable');res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Cross-Origin-Resource-Policy','cross-origin');
  return res.status(200).send(asset.data);
 });
 app.post('/api/v1/properties',authenticate,async(req,res)=>{if(req.principal?.role!=='admin')return res.status(403).json({error:{code:'FORBIDDEN',message:'Administrator permission is required to publish listings'}});const parsed=propertyInputSchema.safeParse(req.body);if(!parsed.success)return res.status(400).json({error:{code:'VALIDATION_ERROR',message:'Property payload is invalid',details:parsed.error.flatten()}});const p=await propertyRepository.create(parsed.data,req.principal!.id);return res.status(201).location(`/api/v1/properties/${p.id}`).json({data:p});});
