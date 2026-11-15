@@ -62,6 +62,35 @@ app.post('/api/v1/auth/register',async(req,res)=>{const result=await registerUse
 app.post('/api/v1/auth/login',async(req,res)=>{const result=await loginUser(req.body);if(!result)return res.status(401).json({error:{code:'INVALID_CREDENTIALS',message:'Email or password is incorrect'}});return res.json({data:{user:result.principal,token:result.token,tokenType:'Bearer',expiresIn:config.JWT_TTL_SECONDS}});});
 app.get('/api/v1/properties',async(req,res)=>{const parsed=propertyQuerySchema.safeParse(req.query);if(!parsed.success)return res.status(400).json({error:{code:'VALIDATION_ERROR',message:'Query parameters are invalid',details:parsed.error.flatten()}});const result=await propertyRepository.list(parsed.data);return res.json({data:{...result,items:result.items.map(toPublicProperty)}});});
 app.get('/api/v1/properties/:id',async(req,res)=>{const p=await propertyRepository.getById(String(req.params.id));if(!p)return res.status(404).json({error:{code:'PROPERTY_NOT_FOUND',message:'Property was not found'}});return res.json({data:toPublicProperty(p)});});
+
+// Administrator-only image uploads. Images are stored in PostgreSQL, not on the
+// ephemeral Render filesystem, and are served through immutable public URLs.
+const imageUploadParser=express.raw({type:['image/jpeg','image/png','image/webp'],limit:'5mb'});
+app.post('/api/v1/media',authenticate,imageUploadParser,async(req,res)=>{
+ if(req.principal?.role!=='admin')return res.status(403).json({error:{code:'FORBIDDEN',message:'Administrator permission is required to upload images'}});
+ if(!pool)return res.status(503).json({error:{code:'STORAGE_UNAVAILABLE',message:'Persistent image storage is not configured'}});
+ if(!Buffer.isBuffer(req.body)||req.body.length===0)return res.status(400).json({error:{code:'INVALID_IMAGE',message:'Select a non-empty JPG, PNG or WebP image'}});
+ const body=req.body as Buffer;
+ const declared=String(req.headers['content-type']||'').split(';')[0]?.toLowerCase();
+ const isJpeg=body.length>=3&&body[0]===0xff&&body[1]===0xd8&&body[2]===0xff;
+ const isPng=body.length>=8&&body.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10]));
+ const isWebp=body.length>=12&&body.toString('ascii',0,4)==='RIFF'&&body.toString('ascii',8,12)==='WEBP';
+ const actual=isJpeg?'image/jpeg':isPng?'image/png':isWebp?'image/webp':null;
+ if(!actual||actual!==declared)return res.status(415).json({error:{code:'UNSUPPORTED_IMAGE',message:'Only valid JPG, PNG and WebP images are accepted'}});
+ const id=randomUUID();
+ await pool.query('INSERT INTO media_assets(id,content_type,data,byte_size) VALUES($1,$2,$3,$4)',[id,actual,body,body.length]);
+ return res.status(201).json({data:{id,url:`/api/v1/media/${id}`,contentType:actual,size:body.length}});
+});
+app.get('/api/v1/media/:id',async(req,res)=>{
+ const id=String(req.params.id);
+ if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id))return res.status(404).end();
+ if(!pool)return res.status(404).end();
+ const result=await pool.query<{content_type:string,data:Buffer}>('SELECT content_type,data FROM media_assets WHERE id=$1',[id]);
+ const asset=result.rows[0];if(!asset)return res.status(404).end();
+ res.setHeader('Content-Type',asset.content_type);res.setHeader('Content-Length',asset.data.length);
+ res.setHeader('Cache-Control','public, max-age=31536000, immutable');res.setHeader('X-Content-Type-Options','nosniff');
+ return res.status(200).send(asset.data);
+});
 app.post('/api/v1/properties',authenticate,async(req,res)=>{if(req.principal?.role!=='admin')return res.status(403).json({error:{code:'FORBIDDEN',message:'Administrator permission is required to publish listings'}});const parsed=propertyInputSchema.safeParse(req.body);if(!parsed.success)return res.status(400).json({error:{code:'VALIDATION_ERROR',message:'Property payload is invalid',details:parsed.error.flatten()}});const p=await propertyRepository.create(parsed.data,req.principal!.id);return res.status(201).location(`/api/v1/properties/${p.id}`).json({data:p});});
 app.patch('/api/v1/properties/:id',authenticate,async(req,res)=>{const current=await propertyRepository.getById(String(req.params.id));if(!current)return res.status(404).json({error:{code:'PROPERTY_NOT_FOUND',message:'Property was not found'}});if(!requireOwnerOrAdmin(current.ownerId,req.principal!))return res.status(403).json({error:{code:'FORBIDDEN',message:'You may only modify your own listings'}});const parsed=propertyInputSchema.safeParse(req.body);if(!parsed.success)return res.status(400).json({error:{code:'VALIDATION_ERROR',message:'Property payload is invalid',details:parsed.error.flatten()}});return res.json({data:await propertyRepository.update(String(req.params.id),parsed.data)});});
 app.delete('/api/v1/properties/:id',authenticate,async(req,res)=>{const current=await propertyRepository.getById(String(req.params.id));if(!current)return res.status(404).json({error:{code:'PROPERTY_NOT_FOUND',message:'Property was not found'}});if(!requireOwnerOrAdmin(current.ownerId,req.principal!))return res.status(403).json({error:{code:'FORBIDDEN',message:'You may only delete your own listings'}});await propertyRepository.delete(String(req.params.id));return res.status(204).end();});
