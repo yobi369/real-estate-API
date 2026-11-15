@@ -3,25 +3,24 @@ import request from 'supertest';
 import { app, propertyRepository } from '../src/app.js';
 import { bootstrapAdmin, resetMemoryUsersForTests } from '../src/auth.js';
 import { config } from '../src/config.js';
-import { migrate } from '../src/db.js';
+import { migrate, pool } from '../src/db.js';
 
-const operator = { email: 'category-operator@example.com', password: 'StrongPassword123' };
+async function createAdmin(email: string): Promise<string> {
+  const result = await bootstrapAdmin({ email, password: 'StrongPassword123' }, config.ADMIN_BOOTSTRAP_TOKEN ?? '');
+  if ('error' in result) throw new Error('Unable to bootstrap test administrator: ' + result.error);
+  return result.token;
+}
 
 describe('website listing categories', () => {
   beforeEach(async () => {
     await migrate();
     resetMemoryUsersForTests();
-    if (process.env.DATABASE_URL) await (await import('../src/db.js')).pool?.query('TRUNCATE TABLE inquiries, properties, users CASCADE');
+    if (pool) await pool.query('TRUNCATE TABLE inquiries, properties, users CASCADE');
     else await propertyRepository.clear();
   });
-  const createAdmin = async (email: string) => {
-    const result = await bootstrapAdmin({ email, password: 'StrongPassword123' }, config.ADMIN_BOOTSTRAP_TOKEN ?? '');
-    if ('error' in result) throw new Error('Unable to bootstrap test administrator: ' + result.error);
-    return result.token;
-  };
 
   it('stores and returns a short-stay listing with nightly pricing', async () => {
-    const adminToken = await createAdmin(operator.email);
+    const adminToken = await createAdmin('category-operator@example.com');
     const response = await request(app).post('/api/v1/properties')
       .set('Authorization', 'Bearer ' + adminToken)
       .send({
@@ -50,10 +49,9 @@ describe('website listing categories', () => {
   });
 
   it('keeps land category distinct from property type', async () => {
-    .set('Authorization', 'Bearer ' + await createAdmin('land-operator@example.com'));
+    const adminToken = await createAdmin('land-operator@example.com');
     const response = await request(app).post('/api/v1/properties')
-    const response = await request(app).post('/api/v1/properties')
-      .set('Authorization', 'Bearer ' + await createAdmin('land-operator@example.com'))
+      .set('Authorization', 'Bearer ' + adminToken)
       .send({
         title: 'Kithimani Plot',
         description: 'Residential plot.',
