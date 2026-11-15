@@ -51,7 +51,7 @@ async function load() {
     const payload = await response.json();
     render(payload.data.items);
     count.textContent = payload.data.total + ' sample ' + (payload.data.total === 1 ? 'record' : 'records');
-  } catch (error) {
+  } catch {
     grid.innerHTML = '<div class="empty">The demo endpoint could not be reached. Please try again shortly.</div>';
     count.textContent = 'Demo unavailable';
   }
