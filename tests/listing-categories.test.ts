@@ -11,7 +11,7 @@ async function createAdmin(email: string): Promise<string> {
   return result.token;
 }
 
-describe('website listing categories', () => {
+async function getAgencyId(token: string): Promise<string> {\n  const response = await request(app).get('/api/v1/agencies/me').set('Authorization', 'Bearer ' + token);\n  expect(response.status).toBe(200);\n  return response.body.data.items[0].id as string;\n}\n\nasync function publish(token: string, id: string, agencyId: string): Promise<void> {\n  const response = await request(app).patch(`/api/v1/properties/${id}/publication`)\n    .set('Authorization', 'Bearer ' + token).set('X-Agency-ID', agencyId).send({ status: 'published' });\n  expect(response.status).toBe(200);\n}\n\ndescribe('website listing categories', () => {
   beforeEach(async () => {
     await migrate();
     resetMemoryUsersForTests();
