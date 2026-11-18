@@ -23,8 +23,8 @@ export class AgencyRepository {
         [randomUUID(),id,userId]
       );
       await client.query(
-        "INSERT INTO audit_events(id,agency_id,actor_user_id,action,entity_type,entity_id,metadata) VALUES($1,$2,$3,'agency.created','agency',$2,$4::jsonb)",
-        [randomUUID(),id,userId,JSON.stringify({name})]
+        "INSERT INTO audit_events(id,agency_id,actor_user_id,action,entity_type,entity_id,metadata) VALUES($1,$2,$3,'agency.created','agency',$5,$4::jsonb)",
+        [randomUUID(),id,userId,JSON.stringify({name}),id]
       );
       await client.query('COMMIT');
       const row=agency.rows[0]!;
