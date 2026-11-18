@@ -4,7 +4,7 @@ import { pool } from '../db.js';
 const memory=new Map<string,StoredInquiry>();
 const fromRow=(r:Record<string,unknown>):StoredInquiry=>{
  const details=(r.details&&typeof r.details==='object'?r.details:{}) as Record<string,unknown>;
- return {...details as unknown as InquiryInput,requestType:String(r.request_type) as InquiryInput['requestType'],name:String(r.name),email:String(r.email),phone:String(r.phone),message:String(r.message),...(r.service==null?{}:{service:String(r.service)}),...(r.listing_id==null?{}:{listingId:String(r.listing_id)}),...(r.listing_title==null?{}:{listingTitle:String(r.listing_title)}),...(r.listing_category==null?{}:{listingCategory:String(r.listing_category) as InquiryInput['listingCategory']}),id:String(r.id),status:String(r.status) as StoredInquiry['status'],createdAt:new Date(String(r.created_at)).toISOString()};
+ return {...details as unknown as InquiryInput,requestType:String(r.request_type) as InquiryInput['requestType'],name:String(r.name),email:String(r.email),phone:String(r.phone),message:String(r.message),...(r.service==null?{}:{service:String(r.service)}),...(r.listing_id==null?{}:{listingId:String(r.listing_id)}),...(r.listing_title==null?{}:{listingTitle:String(r.listing_title)}),...(r.listing_category==null?{}:{listingCategory:String(r.listing_category) as InquiryInput['listingCategory']}),id:String(r.id),...(r.agency_id==null?{}:{agencyId:String(r.agency_id)}),status:String(r.status) as StoredInquiry['status'],createdAt:new Date(String(r.created_at)).toISOString()};
 };
 export class InquiryRepository{
  async create(input:InquiryInput):Promise<StoredInquiry>{
