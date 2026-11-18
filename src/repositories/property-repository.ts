@@ -35,7 +35,7 @@ export class PropertyRepository{
  async getById(id:string,agencyId?:string):Promise<StoredProperty|undefined>{if(!UUID_RE.test(id))return undefined;if(pool){const r=await pool.query(`SELECT * FROM properties WHERE id=$1${agencyId?' AND agency_id=$2':' AND publication_status=\'published\''}` ,agencyId?[id,agencyId]:[id]);return r.rows[0]?fromRow(r.rows[0]):undefined;}const item=memory.get(id);return item&&(!agencyId?(item.publicationStatus==='published'):item.agencyId===agencyId)?item:undefined;}
  async create(input:PropertyInput,ownerId:string,agencyId?:string):Promise<StoredProperty>{
   const normalized={...input,slug:input.slug||slugify(input.title),location:input.location||input.city,address:input.address||input.location||input.city};
-  if(pool){const r=await pool.query('INSERT INTO properties(id,owner_id,agency_id,publication_status,title,slug,description,category,price,price_type,currency,property_type,transaction_type,bedrooms,bathrooms,city,location,address,country,area_sqm,size_acres,title_status,land_use,max_guests,featured,image_urls) VALUES($1,$2,$3,'draft',$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25) RETURNING *',[randomUUID(),ownerId,agencyId??null,normalized.title,normalized.slug,normalized.description,normalized.category,normalized.price,normalized.priceType,normalized.currency,normalized.propertyType,normalized.transactionType,normalized.bedrooms,normalized.bathrooms,normalized.city,normalized.location,normalized.address,normalized.country,normalized.areaSqm,normalized.sizeAcres,normalized.titleStatus??null,normalized.landUse??null,normalized.maxGuests,normalized.featured,JSON.stringify(normalized.imageUrls)]);return fromRow(r.rows[0]!);}
+  if(pool){const r=await pool.query(`INSERT INTO properties(id,owner_id,agency_id,publication_status,title,slug,description,category,price,price_type,currency,property_type,transaction_type,bedrooms,bathrooms,city,location,address,country,area_sqm,size_acres,title_status,land_use,max_guests,featured,image_urls) VALUES($1,$2,$3,'draft',$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25) RETURNING *`,[randomUUID(),ownerId,agencyId??null,normalized.title,normalized.slug,normalized.description,normalized.category,normalized.price,normalized.priceType,normalized.currency,normalized.propertyType,normalized.transactionType,normalized.bedrooms,normalized.bathrooms,normalized.city,normalized.location,normalized.address,normalized.country,normalized.areaSqm,normalized.sizeAcres,normalized.titleStatus??null,normalized.landUse??null,normalized.maxGuests,normalized.featured,JSON.stringify(normalized.imageUrls)]);return fromRow(r.rows[0]!);}
   const now=new Date().toISOString();const p:StoredProperty={...normalized,id:randomUUID(),ownerId,...(agencyId?{agencyId}:{}),publicationStatus:'draft',createdAt:now,updatedAt:now};memory.set(p.id,p);return p;
  }
  async update(id:string,input:PropertyInput,agencyId?:string):Promise<StoredProperty|undefined>{
@@ -50,7 +50,7 @@ export class PropertyRepository{
   }
   const old=memory.get(id);
   if(!old||(agencyId&&old.agencyId!==agencyId))return undefined;
-  const p:StoredProperty={...normalized,id,ownerId:old.ownerId,...(old.agencyId?{agencyId:old.agencyId}:{}),createdAt:old.createdAt,updatedAt:new Date().toISOString()};
+  const p:StoredProperty={...normalized,id,ownerId:old.ownerId,...(old.agencyId?{agencyId:old.agencyId}:{}),publicationStatus:old.publicationStatus,createdAt:old.createdAt,updatedAt:new Date().toISOString()};
   memory.set(id,p);
   return p;
  }
