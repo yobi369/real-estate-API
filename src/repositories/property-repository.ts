@@ -39,9 +39,20 @@ export class PropertyRepository{
   const now=new Date().toISOString();const p:StoredProperty={...normalized,id:randomUUID(),ownerId,...(agencyId?{agencyId}:{}),createdAt:now,updatedAt:now};memory.set(p.id,p);return p;
  }
  async update(id:string,input:PropertyInput,agencyId?:string):Promise<StoredProperty|undefined>{
-  if(!UUID_RE.test(id))return undefined;const normalized={...input,slug:input.slug||slugify(input.title),location:input.location||input.city,address:input.address||input.location||input.city};
-  if(pool){const r=await pool.query('UPDATE properties SET title=$2,slug=$3,description=$4,category=$5,price=$6,price_type=$7,currency=$8,property_type=$9,transaction_type=$10,bedrooms=$11,bathrooms=$12,city=$13,location=$14,address=$15,country=$16,area_sqm=$17,size_acres=$18,title_status=$19,land_use=$20,max_guests=$21,featured=$22,image_urls=$23,updated_at=now() WHERE id=$1${agencyId?' AND agency_id=$24':''} RETURNING *`,agencyId?[id,normalized.title,normalized.slug,normalized.description,normalized.category,normalized.price,normalized.priceType,normalized.currency,normalized.propertyType,normalized.transactionType,normalized.bedrooms,normalized.bathrooms,normalized.city,normalized.location,normalized.address,normalized.country,normalized.areaSqm,normalized.sizeAcres,normalized.titleStatus??null,normalized.landUse??null,normalized.maxGuests,normalized.featured,JSON.stringify(normalized.imageUrls),agencyId]:[id,normalized.title,normalized.slug,normalized.description,normalized.category,normalized.price,normalized.priceType,normalized.currency,normalized.propertyType,normalized.transactionType,normalized.bedrooms,normalized.bathrooms,normalized.city,normalized.location,normalized.address,normalized.country,normalized.areaSqm,normalized.sizeAcres,normalized.titleStatus??null,normalized.landUse??null,normalized.maxGuests,normalized.featured,JSON.stringify(normalized.imageUrls)]);return r.rows[0]?fromRow(r.rows[0]):undefined;}
-  const old=memory.get(id);if(!old||(agencyId&&old.agencyId!==agencyId))return undefined;const p:StoredProperty={...normalized,id,ownerId:old.ownerId,...(old.agencyId?{agencyId:old.agencyId}:{}),createdAt:old.createdAt,updatedAt:new Date().toISOString()};memory.set(id,p);return p;
+  if(!UUID_RE.test(id))return undefined;
+  const normalized={...input,slug:input.slug||slugify(input.title),location:input.location||input.city,address:input.address||input.location||input.city};
+  if(pool){
+   const values=[id,normalized.title,normalized.slug,normalized.description,normalized.category,normalized.price,normalized.priceType,normalized.currency,normalized.propertyType,normalized.transactionType,normalized.bedrooms,normalized.bathrooms,normalized.city,normalized.location,normalized.address,normalized.country,normalized.areaSqm,normalized.sizeAcres,normalized.titleStatus??null,normalized.landUse??null,normalized.maxGuests,normalized.featured,JSON.stringify(normalized.imageUrls)];
+   if(agencyId)values.push(agencyId);
+   const sql=`UPDATE properties SET title=$2,slug=$3,description=$4,category=$5,price=$6,price_type=$7,currency=$8,property_type=$9,transaction_type=$10,bedrooms=$11,bathrooms=$12,city=$13,location=$14,address=$15,country=$16,area_sqm=$17,size_acres=$18,title_status=$19,land_use=$20,max_guests=$21,featured=$22,image_urls=$23,updated_at=now() WHERE id=$1${agencyId?' AND agency_id=$24':''} RETURNING *`;
+   const r=await pool.query(sql,values);
+   return r.rows[0]?fromRow(r.rows[0]):undefined;
+  }
+  const old=memory.get(id);
+  if(!old||(agencyId&&old.agencyId!==agencyId))return undefined;
+  const p:StoredProperty={...normalized,id,ownerId:old.ownerId,...(old.agencyId?{agencyId:old.agencyId}:{}),createdAt:old.createdAt,updatedAt:new Date().toISOString()};
+  memory.set(id,p);
+  return p;
  }
  async delete(id:string,agencyId?:string):Promise<boolean>{if(!UUID_RE.test(id))return false;if(pool){const r=await pool.query(`DELETE FROM properties WHERE id=$1${agencyId?' AND agency_id=$2':''}`,agencyId?[id,agencyId]:[id]);return (r.rowCount??0)>0;}const old=memory.get(id);if(!old||(agencyId&&old.agencyId!==agencyId))return false;return memory.delete(id);}
  async clear():Promise<void>{if(!pool)memory.clear();else await pool.query('DELETE FROM properties');}
