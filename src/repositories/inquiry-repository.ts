@@ -10,9 +10,13 @@ export class InquiryRepository{
  async create(input:InquiryInput):Promise<StoredInquiry>{
   const id=randomUUID();
   if(pool){
+   if(input.agencySlug){
+    const agency=await pool.query('SELECT id FROM agencies WHERE slug=$1 AND status=\'active\'',[input.agencySlug]);
+    if(!agency.rows[0])throw new Error('AGENCY_NOT_FOUND');
+   }
    const result=await pool.query(
-    'INSERT INTO inquiries(id,agency_id,listing_id,listing_title,listing_category,request_type,name,email,phone,message,service,details) VALUES($1,(SELECT agency_id FROM properties WHERE id=$2),$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb) RETURNING *',
-    [id,input.listingId??null,input.listingTitle??null,input.listingCategory??null,input.requestType,input.name,input.email,input.phone,input.message,input.service??null,JSON.stringify(input)]
+    'INSERT INTO inquiries(id,agency_id,listing_id,listing_title,listing_category,request_type,name,email,phone,message,service,details) VALUES($1,COALESCE((SELECT agency_id FROM properties WHERE id=$2),(SELECT id FROM agencies WHERE slug=$3 AND status=\'active\')),$2,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb) RETURNING *',
+    [id,input.listingId??null,input.agencySlug??null,input.listingTitle??null,input.listingCategory??null,input.requestType,input.name,input.email,input.phone,input.message,input.service??null,JSON.stringify(input)]
    );
    return fromRow(result.rows[0]!);
   }
