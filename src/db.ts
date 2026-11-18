@@ -88,7 +88,98 @@ export async function migrate(): Promise<void> {
       );
       CREATE INDEX IF NOT EXISTS inquiries_created_at_idx ON inquiries (created_at DESC);
       CREATE INDEX IF NOT EXISTS inquiries_status_idx ON inquiries (status);
-      INSERT INTO schema_migrations(version) VALUES (1),(2) ON CONFLICT (version) DO NOTHING;
+
+      -- Multi-agency foundation. The new agency_id columns remain nullable during
+      -- the compatibility phase; application authorization is added in later steps.
+      CREATE TABLE IF NOT EXISTS agencies (
+        id uuid PRIMARY KEY,
+        name varchar(160) NOT NULL,
+        slug varchar(180) NOT NULL UNIQUE,
+        status text NOT NULL DEFAULT 'active' CHECK (status IN ('active','suspended','closed')),
+        created_by uuid REFERENCES users(id) ON DELETE SET NULL,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        updated_at timestamptz NOT NULL DEFAULT now()
+      );
+      CREATE TABLE IF NOT EXISTS agency_memberships (
+        id uuid PRIMARY KEY,
+        agency_id uuid NOT NULL REFERENCES agencies(id) ON DELETE CASCADE,
+        user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        role text NOT NULL CHECK (role IN ('owner','admin','agent','viewer')),
+        status text NOT NULL DEFAULT 'active' CHECK (status IN ('active','invited','suspended')),
+        created_at timestamptz NOT NULL DEFAULT now(),
+        updated_at timestamptz NOT NULL DEFAULT now(),
+        UNIQUE (agency_id,user_id)
+      );
+      CREATE INDEX IF NOT EXISTS agency_memberships_user_idx ON agency_memberships (user_id,status);
+      CREATE INDEX IF NOT EXISTS agency_memberships_agency_idx ON agency_memberships (agency_id,status);
+      CREATE TABLE IF NOT EXISTS agency_invitations (
+        id uuid PRIMARY KEY,
+        agency_id uuid NOT NULL REFERENCES agencies(id) ON DELETE CASCADE,
+        email text NOT NULL,
+        role text NOT NULL CHECK (role IN ('admin','agent','viewer')),
+        token_hash text NOT NULL UNIQUE,
+        invited_by uuid REFERENCES users(id) ON DELETE SET NULL,
+        expires_at timestamptz NOT NULL,
+        accepted_at timestamptz,
+        created_at timestamptz NOT NULL DEFAULT now()
+      );
+      CREATE INDEX IF NOT EXISTS agency_invitations_agency_idx ON agency_invitations (agency_id,created_at DESC);
+      CREATE TABLE IF NOT EXISTS audit_events (
+        id uuid PRIMARY KEY,
+        agency_id uuid REFERENCES agencies(id) ON DELETE SET NULL,
+        actor_user_id uuid REFERENCES users(id) ON DELETE SET NULL,
+        action text NOT NULL,
+        entity_type text NOT NULL,
+        entity_id text,
+        metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+        created_at timestamptz NOT NULL DEFAULT now()
+      );
+      CREATE INDEX IF NOT EXISTS audit_events_agency_created_idx ON audit_events (agency_id,created_at DESC);
+      ALTER TABLE properties ADD COLUMN IF NOT EXISTS agency_id uuid REFERENCES agencies(id) ON DELETE RESTRICT;
+      ALTER TABLE inquiries ADD COLUMN IF NOT EXISTS agency_id uuid REFERENCES agencies(id) ON DELETE RESTRICT;
+      CREATE INDEX IF NOT EXISTS properties_agency_created_idx ON properties (agency_id,created_at DESC);
+      CREATE INDEX IF NOT EXISTS inquiries_agency_created_idx ON inquiries (agency_id,created_at DESC);
+
+      -- Preserve existing production inventory in one explicit legacy agency.
+      -- The oldest existing administrator becomes its owner; if no administrator
+      -- exists yet, the oldest account is used as the migration owner.
+      DO $tenancy_backfill$
+      DECLARE
+        default_owner_id uuid;
+        default_agency_id uuid;
+      BEGIN
+        SELECT id INTO default_owner_id
+          FROM users
+          ORDER BY CASE WHEN role='admin' THEN 0 ELSE 1 END, created_at, id
+          LIMIT 1;
+
+        IF default_owner_id IS NOT NULL THEN
+          SELECT id INTO default_agency_id FROM agencies WHERE slug='legacy-default';
+          IF default_agency_id IS NULL THEN
+            default_agency_id := gen_random_uuid();
+            INSERT INTO agencies(id,name,slug,created_by)
+              VALUES(default_agency_id,'Default Agency','legacy-default',default_owner_id);
+          END IF;
+
+          INSERT INTO agency_memberships(id,agency_id,user_id,role,status)
+            SELECT gen_random_uuid(),default_agency_id,u.id,
+              CASE WHEN u.id=default_owner_id THEN 'owner'
+                   WHEN u.role='admin' THEN 'admin'
+                   ELSE 'agent' END,
+              'active'
+            FROM users u
+            WHERE u.id=default_owner_id
+               OR u.role='admin'
+               OR EXISTS (SELECT 1 FROM properties p WHERE p.owner_id=u.id)
+            ON CONFLICT (agency_id,user_id) DO NOTHING;
+
+          UPDATE properties SET agency_id=default_agency_id WHERE agency_id IS NULL;
+          UPDATE inquiries SET agency_id=default_agency_id WHERE agency_id IS NULL;
+        END IF;
+      END
+      $tenancy_backfill$;
+
+      INSERT INTO schema_migrations(version) VALUES (1),(2),(3) ON CONFLICT (version) DO NOTHING;
     `);
     await client.query('COMMIT');
   } catch (error) {
