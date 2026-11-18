@@ -24,6 +24,6 @@ export class InquiryRepository{
   memory.set(id,item);
   return item;
  }
- async list(limit=100,agencyId?:string):Promise<StoredInquiry[]>{if(pool){const r=await pool.query(`SELECT * FROM inquiries WHERE agency_id=$2 ORDER BY created_at DESC LIMIT $1`,[limit,agencyId]);return r.rows.map(fromRow);}return [...memory.values()].filter(item=>agencyId===undefined||item.agencyId===agencyId).sort((a,b)=>b.createdAt.localeCompare(a.createdAt)).slice(0,limit);}
+ async list(limit=100,agencyId?:string):Promise<StoredInquiry[]>{if(pool){const r=agencyId===undefined?await pool.query('SELECT * FROM inquiries ORDER BY created_at DESC LIMIT $1',[limit]):await pool.query('SELECT * FROM inquiries WHERE agency_id=$2 ORDER BY created_at DESC LIMIT $1',[limit,agencyId]);return r.rows.map(fromRow);}return [...memory.values()].filter(item=>agencyId===undefined||item.agencyId===agencyId).sort((a,b)=>b.createdAt.localeCompare(a.createdAt)).slice(0,limit);}
  async clear():Promise<void>{if(!pool)memory.clear();else await pool.query('DELETE FROM inquiries');}
 }
