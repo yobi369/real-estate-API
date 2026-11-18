@@ -10,4 +10,4 @@ export const inquiryInputSchema=z.object({
  visitDate:z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), pickupPoint:z.string().trim().max(160).optional()
 }).strict().refine(v=>!v.checkIn||!v.checkOut||v.checkOut>v.checkIn,{message:'Check-out must be after check-in',path:['checkOut']});
 export type InquiryInput=z.infer<typeof inquiryInputSchema>;
-export type StoredInquiry=InquiryInput & {id:string;status:'new'|'contacted'|'closed';createdAt:string};
+export type StoredInquiry=InquiryInput & {id:string;agencyId?:string;status:'new'|'contacted'|'closed';createdAt:string};
