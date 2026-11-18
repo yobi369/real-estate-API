@@ -8,7 +8,7 @@ const fromRow=(r:Record<string,unknown>):StoredInquiry=>{
 };
 export class InquiryRepository{
  async create(input:InquiryInput):Promise<StoredInquiry>{
-  const id=randomUUID();if(pool){const r=await pool.query('INSERT INTO inquiries(id,agency_id,listing_id,listing_title,listing_category,request_type,name,email,phone,message,service,details) VALUES($1,(SELECT agency_id FROM properties WHERE id=$2),$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb) RETURNING *',[id,input.listingId??null,input.listingId??null,input.listingTitle??null,input.listingCategory??null,input.requestType,input.name,input.email,input.phone,input.message,input.service??null,JSON.stringify(input)]);return fromRow(r.rows[0]!);}
+  const id=randomUUID();if(pool){const r=await pool.query('INSERT INTO inquiries(id,agency_id,listing_id,listing_title,listing_category,request_type,name,email,phone,message,service,details) VALUES($1,(SELECT agency_id FROM properties WHERE id=$2),$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb) RETURNING *',[id,input.listingId??null,input.listingTitle??null,input.listingCategory??null,input.requestType,input.name,input.email,input.phone,input.message,input.service??null,JSON.stringify(input)]);return fromRow(r.rows[0]!);}
   const item:StoredInquiry={...input,id,status:'new',createdAt:new Date().toISOString()};memory.set(id,item);return item;
  }
  async list(limit=100,agencyId?:string):Promise<StoredInquiry[]>{if(pool){const r=await pool.query(`SELECT * FROM inquiries WHERE agency_id=$2 ORDER BY created_at DESC LIMIT $1`,[limit,agencyId]);return r.rows.map(fromRow);}return [];}
