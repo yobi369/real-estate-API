@@ -28,8 +28,12 @@ describe('one-time administrator bootstrap', () => {
     expect(response.status).toBe(201);
     expect(response.body.data.user.role).toBe('admin');
 
-    const inbox = await request(app).get('/api/v1/inquiries')
+    const memberships = await request(app).get('/api/v1/agencies/me')
       .set('Authorization', 'Bearer ' + response.body.data.token);
+    const agency = memberships.body.data.items[0];
+    const inbox = await request(app).get('/api/v1/inquiries')
+      .set('Authorization', 'Bearer ' + response.body.data.token)
+      .set('X-Agency-ID', agency.id);
     expect(inbox.status).toBe(200);
 
     const second = await request(app).post('/api/v1/admin/bootstrap')
