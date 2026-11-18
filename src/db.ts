@@ -135,6 +135,8 @@ export async function migrate(): Promise<void> {
         created_at timestamptz NOT NULL DEFAULT now()
       );
       CREATE INDEX IF NOT EXISTS audit_events_agency_created_idx ON audit_events (agency_id,created_at DESC);
+      ALTER TABLE properties ADD COLUMN IF NOT EXISTS publication_status text NOT NULL DEFAULT 'published' CHECK (publication_status IN ('draft','published','archived'));
+      CREATE INDEX IF NOT EXISTS properties_publication_status_created_idx ON properties (publication_status,created_at DESC);
       ALTER TABLE properties ADD COLUMN IF NOT EXISTS agency_id uuid REFERENCES agencies(id) ON DELETE RESTRICT;
       ALTER TABLE inquiries ADD COLUMN IF NOT EXISTS agency_id uuid REFERENCES agencies(id) ON DELETE RESTRICT;
       CREATE INDEX IF NOT EXISTS properties_agency_created_idx ON properties (agency_id,created_at DESC);
