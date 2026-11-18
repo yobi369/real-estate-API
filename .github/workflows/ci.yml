@@ -4,7 +4,7 @@ concurrency:
   cancel-in-progress: true
 on:
   push:
-    branches: [main, 'upgrade/**', 'sales/**', 'integration/**']
+    branches: [main, 'upgrade/**', 'sales/**', 'integration/**', 'feature/**']
   pull_request:
     branches: [main, 'sales/**']
   workflow_dispatch:
