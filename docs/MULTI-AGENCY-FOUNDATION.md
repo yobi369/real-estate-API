@@ -44,3 +44,15 @@ If the database has no users when this migration runs, no default agency is crea
 ## Current milestone boundary
 
 This change establishes the database foundation only. It does **not** yet provide agency registration, invitations, tenant-aware JWT claims, tenant-scoped API authorization, subscription billing or M-Pesa collection. Those remain separate acceptance gates.
+
+## Agency onboarding API (implemented on the feature branch)
+
+- `POST /api/v1/agencies` requires a valid bearer token and a strict JSON body containing a 2–160 character agency name.
+- Creation runs in one PostgreSQL transaction: agency, owner membership and `agency.created` audit event either all commit or all roll back.
+- The creator receives the `owner` membership role. The response includes the agency ID, generated unique slug, status and creation timestamp.
+- `GET /api/v1/agencies/me` returns only active agencies for which the authenticated user has an active membership.
+- Both endpoints return a clear persistence-required response when PostgreSQL is unavailable; agency data is never silently stored in process memory.
+
+## Remaining tenant security gate
+
+Agency onboarding is not yet the same as complete tenant isolation. Property creation/update/delete and enquiry workflows still need agency-aware authorization and repository scoping. Do not onboard paying customers or represent listing access as tenant-isolated until those gates and cross-agency denial tests are complete.
