@@ -34,6 +34,10 @@ export async function bootstrapAdmin(input:unknown,token:string):Promise<{princi
    if(existing.rows.length){await client.query('ROLLBACK');return {error:'EXISTS'};}
    const id=randomUUID();
    const created=await client.query<{id:string,email:string,role:Role}>('INSERT INTO users(id,email,password_hash,role) VALUES($1,$2,$3,$4) RETURNING id,email,role',[id,email,passwordHash,'admin']);
+   const agencyId=randomUUID();
+   await client.query('INSERT INTO agencies(id,name,slug,created_by) VALUES($1,$2,$3,$4)',[agencyId,'Default Agency',`default-${id.slice(0,8)}`,id]);
+   await client.query("INSERT INTO agency_memberships(id,agency_id,user_id,role,status) VALUES($1,$2,$3,'owner','active')",[randomUUID(),agencyId,id]);
+   await client.query("INSERT INTO audit_events(id,agency_id,actor_user_id,action,entity_type,entity_id,metadata) VALUES($1,$2,$3,'agency.created','agency',$4,$5::jsonb)",[randomUUID(),agencyId,id,agencyId,JSON.stringify({source:'admin-bootstrap'})]);
    await client.query('COMMIT');
    const principal=created.rows[0]!;
    return {principal,token:signToken(principal)};
