@@ -16,3 +16,36 @@ describe('authentication and authorization',()=>{it('requires a bearer token to 
 describe('properties',()=>{it('requires an administrator role to publish listings',async()=>{const user=await register('seller@example.com');expect((await request(app).post('/api/v1/properties').set('Authorization',`Bearer ${user}`).send(sample)).status).toBe(403);const admin=await bootstrap('agency-admin@example.com');const r=await request(app).post('/api/v1/properties').set('Authorization',`Bearer ${admin}`).send(sample);expect(r.status).toBe(201);expect(r.body.data.ownerId).toBeTruthy();});it('persists listings in PostgreSQL across repository instances',async()=>{if(!pool)return;const token=await bootstrap('persistent@example.com');const created=await request(app).post('/api/v1/properties').set('Authorization',`Bearer ${token}`).send(sample);expect(created.status).toBe(201);const reloaded=await new PropertyRepository().getById(created.body.data.id);expect(reloaded?.title).toBe(sample.title);expect(reloaded?.ownerId).toBe(created.body.data.ownerId);});it('rejects invalid prices',async()=>{const token=await bootstrap('seller2@example.com');expect((await request(app).post('/api/v1/properties').set('Authorization',`Bearer ${token}`).send({...sample,price:-1})).status).toBe(400);});it('filters and paginates',async()=>{const token=await bootstrap('seller3@example.com');await request(app).post('/api/v1/properties').set('Authorization',`Bearer ${token}`).send(sample);await request(app).post('/api/v1/properties').set('Authorization',`Bearer ${token}`).send({...sample,title:'Nairobi apartment',city:'Nairobi',propertyType:'apartment'});const r=await request(app).get('/api/v1/properties?city=Mombasa&page=1&limit=1');expect(r.body.data.total).toBe(1);expect(r.body.data.items).toHaveLength(1);});it('returns not-found and invalid-range errors',async()=>{expect((await request(app).get('/api/v1/properties/missing')).body.error.code).toBe('PROPERTY_NOT_FOUND');expect((await request(app).get('/missing')).body.error.code).toBe('NOT_FOUND');expect((await request(app).get('/api/v1/properties?minPrice=100&maxPrice=10')).status).toBe(400);});});
 
 describe('multi-agency schema foundation',()=>{it('creates agency tenancy, invitation and audit tables idempotently',async()=>{if(!pool)return;await migrate();const r=await pool.query<{name:string,exists:boolean}>(`SELECT name, to_regclass('public.'||name) IS NOT NULL AS exists FROM unnest(ARRAY['agencies','agency_memberships','agency_invitations','audit_events']) AS name`);expect(r.rows).toHaveLength(4);expect(r.rows.every(row=>row.exists)).toBe(true);const columns=await pool.query<{table_name:string,column_name:string}>(`SELECT table_name,column_name FROM information_schema.columns WHERE table_schema='public' AND (table_name,column_name) IN (('properties','agency_id'),('inquiries','agency_id'))`);expect(columns.rows).toHaveLength(2);await migrate();});});
+
+describe('agency onboarding',()=>{
+ it('requires authentication to create or list agencies',async()=>{
+  expect((await request(app).post('/api/v1/agencies').send({name:'Coastal Realty'})).status).toBe(401);
+  expect((await request(app).get('/api/v1/agencies/me')).status).toBe(401);
+ });
+ it('validates agency names and creates an owner membership transactionally',async()=>{
+  if(!pool)return;
+  const token=await register('agency-founder@example.com');
+  expect((await request(app).post('/api/v1/agencies').set('Authorization',`Bearer ${token}`).send({name:'x'})).status).toBe(400);
+  const created=await request(app).post('/api/v1/agencies').set('Authorization',`Bearer ${token}`).send({name:'Coastal Realty Kenya'});
+  expect(created.status).toBe(201);
+  expect(created.body.data.name).toBe('Coastal Realty Kenya');
+  expect(created.body.data.role).toBe('owner');
+  expect(created.body.data.slug).toMatch(/^coastal-realty-kenya-[0-9a-f]{8}$/);
+  const listed=await request(app).get('/api/v1/agencies/me').set('Authorization',`Bearer ${token}`);
+  expect(listed.status).toBe(200);
+  expect(listed.body.data.items).toHaveLength(1);
+  expect(listed.body.data.items[0].id).toBe(created.body.data.id);
+  const counts=await pool.query<{members:string;audits:string}>(`SELECT (SELECT count(*)::text FROM agency_memberships WHERE agency_id=$1) AS members,(SELECT count(*)::text FROM audit_events WHERE agency_id=$1) AS audits`,[created.body.data.id]);
+  expect(counts.rows[0]).toEqual({members:'1',audits:'1'});
+ });
+ it('does not expose another user\'s agency memberships',async()=>{
+  if(!pool)return;
+  const first=await register('agency-first@example.com');
+  const second=await register('agency-second@example.com');
+  const created=await request(app).post('/api/v1/agencies').set('Authorization',`Bearer ${first}`).send({name:'First Agency'});
+  const listed=await request(app).get('/api/v1/agencies/me').set('Authorization',`Bearer ${second}`);
+  expect(listed.status).toBe(200);
+  expect(listed.body.data.items).toHaveLength(0);
+  expect(listed.body.data.items.some((item:{id:string})=>item.id===created.body.data.id)).toBe(false);
+ });
+});
