@@ -18,9 +18,9 @@ Supported agency membership roles are `owner`, `admin`, `agent` and `viewer`. In
 
 When existing users are present, the migration creates a `legacy-default` agency. The oldest existing administrator is selected as its owner; if no administrator exists, the oldest account is selected. Existing administrators receive agency-admin membership, property owners receive agent membership unless they are the selected owner, and existing properties and enquiries are associated with the default agency.
 
-The migration is additive and idempotent. Tenant columns remain nullable and the legacy API continues to operate while authorization and repository scoping are implemented in subsequent changes. No existing user role is rewritten, no property or enquiry is deleted, and no billing is introduced.
+The migration is additive and idempotent. Tenant columns remain nullable for legacy compatibility. No existing user role is rewritten, no property or enquiry is deleted, and no billing is introduced.
 
-If the database has no users when this migration runs, no default agency is created. The first-admin/bootstrap flow must establish the initial agency before agency-managed listings are enabled.
+If the database has no users when this migration runs, no default agency is created. The first-admin/bootstrap flow now creates a private default agency, owner membership and audit event in the same transaction as the initial administrator.
 
 ## Security rules for the next implementation steps
 
