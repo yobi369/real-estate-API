@@ -10,6 +10,8 @@ import { propertyInputSchema,propertyQuerySchema } from './domain/property.js';
 import { inquiryInputSchema } from './domain/inquiry.js';
 import { PropertyRepository, type StoredProperty } from './repositories/property-repository.js';
 import { InquiryRepository } from './repositories/inquiry-repository.js';
+import { AgencyRepository } from './repositories/agency-repository.js';
+import { z } from 'zod';
 import { demoProperties } from './demo-data.js';
 import { pool } from './db.js';
 import { authenticate,bootstrapAdmin,loginUser,registerUser,requireOwnerOrAdmin } from './auth.js';
@@ -19,6 +21,8 @@ const pinoHttp = require('pino-http') as (options: PinoHttpOptions) => express.R
 export const app=express();
 export const propertyRepository=new PropertyRepository();
 export const inquiryRepository=new InquiryRepository();
+export const agencyRepository=new AgencyRepository();
+const agencyCreateSchema=z.object({name:z.string().trim().min(2).max(160)}).strict();
 const toPublicProperty=(property:StoredProperty)=>{const {ownerId,...publicFields}=property;void ownerId;return publicFields;};
 const inquiryRateLimits=new Map<string,{count:number;resetAt:number}>();
 const inquiryRateLimit:express.RequestHandler=(req,res,next)=>{
@@ -37,13 +41,15 @@ app.use(express.json({limit:'1mb',strict:true}));
 app.use(pinoHttp({level:config.LOG_LEVEL,genReqId:(req,res)=>{const h=req.headers['x-request-id'];const id=typeof h==='string'&&/^[a-zA-Z0-9._-]{1,100}$/.test(h)?h:randomUUID();res.setHeader('x-request-id',id);return id;},redact:['req.headers.authorization','req.headers.cookie','req.headers.x-bootstrap-token']}));
 const spec={
  openapi:'3.1.0',info:{title:'Real Estate API',version:'1.2.0',description:'Property, short-stay and land inventory with authenticated listing management and persisted customer enquiries.'},servers:[{url:'/'}],
- tags:[{name:'Properties',description:'Search and manage property listings.'},{name:'Inquiries',description:'Receive and review customer enquiries.'},{name:'Authentication',description:'Register and authenticate listing operators.'},{name:'Health',description:'Service health and readiness.'}],
+ tags:[{name:'Properties',description:'Search and manage property listings.'},{name:'Inquiries',description:'Receive and review customer enquiries.'},{name:'Agencies',description:'Create and discover agency workspaces.'},{name:'Authentication',description:'Register and authenticate listing operators.'},{name:'Health',description:'Service health and readiness.'}],
  paths:{
   '/health/live':{get:{tags:['Health'],summary:'Check process liveness',responses:{'200':{description:'Process is alive'}}}},
   '/health/ready':{get:{tags:['Health'],summary:'Check database readiness',responses:{'200':{description:'Database is ready'},'503':{description:'Database unavailable or not configured'}}}},
   '/api/v1/admin/bootstrap':{post:{tags:['Authentication'],summary:'Create the first administrator once using a bootstrap secret',parameters:[{name:'x-bootstrap-token',in:'header',required:true,schema:{type:'string'}}],requestBody:{required:true,content:{'application/json':{schema:{type:'object',required:['email','password'],properties:{email:{type:'string',format:'email'},password:{type:'string',minLength:12}}}}}},responses:{'201':{description:'Administrator created'},'404':{description:'Bootstrap unavailable'},'409':{description:'An administrator already exists'}}}},
   '/api/v1/auth/register':{post:{tags:['Authentication'],summary:'Register a listing operator',requestBody:{required:true,content:{'application/json':{schema:{type:'object',required:['email','password'],properties:{email:{type:'string',format:'email'},password:{type:'string',minLength:12}}}}}},responses:{'201':{description:'Account created'},'400':{description:'Invalid registration input'},'409':{description:'Email already registered'}}}},
   '/api/v1/auth/login':{post:{tags:['Authentication'],summary:'Authenticate a listing operator',requestBody:{required:true,content:{'application/json':{schema:{type:'object',required:['email','password'],properties:{email:{type:'string',format:'email'},password:{type:'string'}}}}}},responses:{'200':{description:'Authenticated'},'401':{description:'Invalid credentials'}}}},
+  '/api/v1/agencies':{post:{tags:['Agencies'],summary:'Create an agency workspace and become its owner',security:[{bearerAuth:[]}],requestBody:{required:true,content:{'application/json':{schema:{type:'object',additionalProperties:false,required:['name'],properties:{name:{type:'string',minLength:2,maxLength:160}}}}}},responses:{'201':{description:'Agency created'},'400':{description:'Invalid agency name'},'401':{description:'Authentication required'},'503':{description:'Persistent storage required'}}}},
+  '/api/v1/agencies/me':{get:{tags:['Agencies'],summary:'List the authenticated user\'s active agencies',security:[{bearerAuth:[]}],responses:{'200':{description:'Agency memberships'},'401':{description:'Authentication required'},'503':{description:'Persistent storage required'}}}},
   '/api/v1/properties':{get:{tags:['Properties'],summary:'Search public property listings',parameters:[{name:'page',in:'query',schema:{type:'integer',minimum:1}},{name:'limit',in:'query',schema:{type:'integer',minimum:1,maximum:100}},{name:'city',in:'query',schema:{type:'string'}},{name:'category',in:'query',schema:{type:'string',enum:['property','airbnb','land']}},{name:'propertyType',in:'query',schema:{type:'string',enum:['apartment','house','land','commercial']}},{name:'transactionType',in:'query',schema:{type:'string',enum:['sale','rent','lease']}},{name:'minPrice',in:'query',schema:{type:'number'}},{name:'maxPrice',in:'query',schema:{type:'number'}},{name:'search',in:'query',schema:{type:'string'}}],responses:{'200':{description:'Paginated live listings'},'400':{description:'Invalid query'}}},post:{tags:['Properties'],summary:'Publish a property, short-stay or land listing (admin only)',security:[{bearerAuth:[]}],requestBody:{required:true,content:{'application/json':{schema:{$ref:'#/components/schemas/PropertyInput'}}}},responses:{'201':{description:'Listing created'},'401':{description:'Authentication required'},'403':{description:'Administrator permission required'}}}},
   '/api/v1/properties/{id}':{parameters:[{name:'id',in:'path',required:true,schema:{type:'string',format:'uuid'}}],get:{tags:['Properties'],summary:'Retrieve one listing',responses:{'200':{description:'Listing found'},'404':{description:'Not found'}}},patch:{tags:['Properties'],summary:'Update an owned listing',security:[{bearerAuth:[]}],responses:{'200':{description:'Updated'},'403':{description:'Forbidden'}}},delete:{tags:['Properties'],summary:'Delete an owned listing',security:[{bearerAuth:[]}],responses:{'204':{description:'Deleted'},'403':{description:'Forbidden'}}}},
   '/api/v1/inquiries':{post:{tags:['Inquiries'],summary:'Submit a customer enquiry, viewing or stay request',requestBody:{required:true,content:{'application/json':{schema:{$ref:'#/components/schemas/InquiryInput'}}}},responses:{'201':{description:'Enquiry persisted'},'400':{description:'Invalid enquiry'}}},get:{tags:['Inquiries'],summary:'List recent enquiries (admin only)',security:[{bearerAuth:[]}],responses:{'200':{description:'Recent enquiries'},'401':{description:'Authentication required'},'403':{description:'Admin permission required'}}}}
@@ -60,6 +66,24 @@ app.get('/openapi.json',(_req,res)=>res.json(spec));app.use('/docs',swaggerUi.se
 app.post('/api/v1/admin/bootstrap',async(req,res)=>{const result=await bootstrapAdmin(req.body,req.header('x-bootstrap-token')??'');if('error'in result){const status=result.error==='DISABLED'?404:result.error==='EXISTS'?409:400;return res.status(status).json({error:{code:result.error,message:result.error==='DISABLED'?'Bootstrap is unavailable':result.error==='EXISTS'?'An administrator already exists':'Administrator details are invalid'}});}return res.status(201).json({data:{user:result.principal,token:result.token,tokenType:'Bearer',expiresIn:config.JWT_TTL_SECONDS}});});
 app.post('/api/v1/auth/register',async(req,res)=>{const result=await registerUser(req.body);if('error'in result)return res.status(result.error==='EXISTS'?409:400).json({error:{code:result.error==='EXISTS'?'EMAIL_EXISTS':'VALIDATION_ERROR',message:result.error==='EXISTS'?'An account with this email already exists':'Email or password does not meet requirements'}});return res.status(201).json({data:{user:result.principal,token:result.token,tokenType:'Bearer',expiresIn:config.JWT_TTL_SECONDS}});});
 app.post('/api/v1/auth/login',async(req,res)=>{const result=await loginUser(req.body);if(!result)return res.status(401).json({error:{code:'INVALID_CREDENTIALS',message:'Email or password is incorrect'}});return res.json({data:{user:result.principal,token:result.token,tokenType:'Bearer',expiresIn:config.JWT_TTL_SECONDS}});});
+app.post('/api/v1/agencies',authenticate,async(req,res)=>{
+ const parsed=agencyCreateSchema.safeParse(req.body);
+ if(!parsed.success)return res.status(400).json({error:{code:'VALIDATION_ERROR',message:'Agency name must contain 2 to 160 characters'}});
+ try{
+  const agency=await agencyRepository.createForUser(req.principal!.id,parsed.data.name);
+  return res.status(201).location(`/api/v1/agencies/${agency.id}`).json({data:agency});
+ }catch(error){
+  if(error instanceof Error&&error.message==='PERSISTENCE_REQUIRED')return res.status(503).json({error:{code:'PERSISTENCE_REQUIRED',message:'Agency workspaces require PostgreSQL persistence'}});
+  throw error;
+ }
+});
+app.get('/api/v1/agencies/me',authenticate,async(req,res)=>{
+ try{return res.json({data:{items:await agencyRepository.listForUser(req.principal!.id)}});}
+ catch(error){
+  if(error instanceof Error&&error.message==='PERSISTENCE_REQUIRED')return res.status(503).json({error:{code:'PERSISTENCE_REQUIRED',message:'Agency workspaces require PostgreSQL persistence'}});
+  throw error;
+ }
+});
 app.get('/api/v1/properties',async(req,res)=>{const parsed=propertyQuerySchema.safeParse(req.query);if(!parsed.success)return res.status(400).json({error:{code:'VALIDATION_ERROR',message:'Query parameters are invalid',details:parsed.error.flatten()}});const result=await propertyRepository.list(parsed.data);return res.json({data:{...result,items:result.items.map(toPublicProperty)}});});
 app.get('/api/v1/properties/:id',async(req,res)=>{const p=await propertyRepository.getById(String(req.params.id));if(!p)return res.status(404).json({error:{code:'PROPERTY_NOT_FOUND',message:'Property was not found'}});return res.json({data:toPublicProperty(p)});});
 
