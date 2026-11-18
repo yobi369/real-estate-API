@@ -37,7 +37,7 @@ const resolveActiveAgency=async(req:express.Request,res:express.Response):Promis
   throw error;
  }
 };
-const toPublicProperty=(property:StoredProperty)=>{const {ownerId,...publicFields}=property;void ownerId;return publicFields;};
+const toPublicProperty=(property:StoredProperty)=>{const {ownerId,agencyId,...publicFields}=property;void ownerId;void agencyId;return publicFields;};
 const inquiryRateLimits=new Map<string,{count:number;resetAt:number}>();
 const inquiryRateLimit:express.RequestHandler=(req,res,next)=>{
  const now=Date.now();const key=req.ip||req.socket.remoteAddress||'unknown';
