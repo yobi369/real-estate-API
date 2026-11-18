@@ -7,6 +7,15 @@ export type AgencySummary={id:string;name:string;slug:string;status:'active'|'su
 const slugBase=(name:string)=>name.normalize('NFKD').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,120)||'agency';
 
 export class AgencyRepository {
+  async getActiveMembership(userId:string,agencyId:string):Promise<{role:AgencyRole}|undefined>{
+    if(!pool)throw new Error('PERSISTENCE_REQUIRED');
+    const result=await pool.query<{role:AgencyRole}>(
+      "SELECT m.role FROM agency_memberships m JOIN agencies a ON a.id=m.agency_id WHERE m.user_id=$1 AND m.agency_id=$2 AND m.status='active' AND a.status='active'",
+      [userId,agencyId]
+    );
+    return result.rows[0];
+  }
+
   async createForUser(userId:string,name:string):Promise<AgencySummary>{
     if(!pool)throw new Error('PERSISTENCE_REQUIRED');
     const client=await pool.connect();
