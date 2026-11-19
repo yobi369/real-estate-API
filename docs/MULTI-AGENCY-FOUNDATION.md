@@ -28,7 +28,7 @@ No existing user role is rewritten, no property or enquiry is deleted, and no bi
 
 ## Audit and invitation boundaries
 
-The current audit trail covers agency creation (including bootstrap), property create/update/delete, and publication transitions. Listing audit events are committed or rolled back with their corresponding listing mutations. Invitation create/accept/revoke lifecycle is audited transactionally. Membership role administration and member removal remain unimplemented. Do not represent those capabilities as complete.
+The current audit trail covers agency creation (including bootstrap), property create/update/delete, and publication transitions. Listing audit events are committed or rolled back with their corresponding listing mutations. Invitation create/accept/revoke lifecycle and membership role updates/removals are audited transactionally.
 
 ## Deployment and rollback
 
@@ -40,4 +40,4 @@ The current audit trail covers agency creation (including bootstrap), property c
 
 ## Milestone boundary
 
-The branch now provides the multi-agency schema, onboarding, membership-based context resolution, agency-scoped property writes, publication lifecycle, and agency-scoped enquiry inbox. It now provides invitation creation, email-bound acceptance, and revocation. It does not yet provide membership role administration, billing, M-Pesa collection, distributed rate limiting, or complete audit coverage. Production onboarding remains blocked on the release gates in [PRODUCTION-READINESS.md](PRODUCTION-READINESS.md).
+The branch now provides the multi-agency schema, onboarding, membership-based context resolution, agency-scoped property writes, publication lifecycle, and agency-scoped enquiry inbox. It now provides invitation creation, email-bound acceptance, and revocation. It does not yet provide ownership transfer, billing, M-Pesa collection, distributed rate limiting, or complete audit coverage. Production onboarding remains blocked on the release gates in [PRODUCTION-READINESS.md](PRODUCTION-READINESS.md).
