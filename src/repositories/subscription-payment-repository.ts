@@ -83,10 +83,14 @@ export class SubscriptionPaymentRepository {
    }
    if(payment.status==='failed'||payment.status==='expired'){await client.query('COMMIT');return {found:true,status:payment.status,duplicate:true};}
    const validAmount=input.amount!==null&&input.amount*100===Number(payment.amount_minor);
-   if(input.resultCode!==0||!validAmount||!input.receipt){
-    const reason=input.resultCode!==0?input.resultDescription:'Callback amount or receipt did not match the pending payment';
-    await client.query('UPDATE subscription_payments SET status=\'failed\',result_code=$2,result_description=$3,callback_payload=$4::jsonb,updated_at=now() WHERE id=$1',[payment.id,String(input.resultCode),reason,JSON.stringify(input.payload)]);
+   if(input.resultCode!==0){
+    await client.query('UPDATE subscription_payments SET status=\\'failed\\',result_code=$2,result_description=$3,callback_payload=$4::jsonb,updated_at=now() WHERE id=$1',[payment.id,String(input.resultCode),input.resultDescription,JSON.stringify(input.payload)]);
     await client.query('COMMIT');return {found:true,status:'failed',duplicate:false};
+   }
+   if(!validAmount||!input.receipt){
+    const reason='Successful callback did not include the expected amount and receipt; payment requires provider reconciliation';
+    await client.query('UPDATE subscription_payments SET status=\\'pending\\',result_code=\\'CALLBACK_VALIDATION_PENDING\\',result_description=$2,callback_payload=$3::jsonb,updated_at=now() WHERE id=$1',[payment.id,reason,JSON.stringify(input.payload)]);
+    await client.query('COMMIT');return {found:true,status:'pending',duplicate:false};
    }
    const current=await client.query("SELECT * FROM agency_subscriptions WHERE agency_id=$1 AND status IN ('active','trialing','past_due') ORDER BY created_at DESC LIMIT 1 FOR UPDATE",[payment.agency_id]);
    let subscriptionId:string;
