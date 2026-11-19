@@ -126,6 +126,24 @@ export async function migrate(): Promise<void> {
       );
       ALTER TABLE agency_invitations ADD COLUMN IF NOT EXISTS revoked_at timestamptz;
       CREATE INDEX IF NOT EXISTS agency_invitations_agency_idx ON agency_invitations (agency_id,created_at DESC);
+      CREATE TABLE IF NOT EXISTS agency_ownership_transfers (
+        id uuid PRIMARY KEY,
+        agency_id uuid NOT NULL REFERENCES agencies(id) ON DELETE CASCADE,
+        initiated_by uuid NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+        target_user_id uuid NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+        token_hash text NOT NULL UNIQUE,
+        expires_at timestamptz NOT NULL,
+        accepted_at timestamptz,
+        revoked_at timestamptz,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        CHECK (initiated_by <> target_user_id)
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS agency_ownership_transfers_pending_agency_idx
+        ON agency_ownership_transfers (agency_id)
+        WHERE accepted_at IS NULL AND revoked_at IS NULL;
+      CREATE INDEX IF NOT EXISTS agency_ownership_transfers_target_idx
+        ON agency_ownership_transfers (target_user_id, expires_at DESC);
+
       CREATE TABLE IF NOT EXISTS audit_events (
         id uuid PRIMARY KEY,
         agency_id uuid REFERENCES agencies(id) ON DELETE SET NULL,
