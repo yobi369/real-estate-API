@@ -40,7 +40,8 @@ export async function initiateStkPush(input:{phoneNumber:string;amountMinor:numb
  const callback=(callbackBase.endsWith('/')?callbackBase.slice(0,-1):callbackBase)+'/api/v1/webhooks/mpesa/'+config.MPESA_CALLBACK_SECRET;
  const accountReference='SP'+input.agencyId.replaceAll('-','').slice(0,8);
  const payload={BusinessShortCode:shortcode,Password:password,Timestamp:timestamp,TransactionType:'CustomerPayBillOnline',Amount:input.amountMinor/100,PartyA:phone,PartyB:shortcode,PhoneNumber:phone,CallBackURL:callback,AccountReference:accountReference,TransactionDesc:'Agency subscription'};
- let response:Response;try{response=await fetch(baseUrl()+'/mpesa/stkpush/v1/processrequest',{method:'POST',headers:{Authorization:'Bearer '+await accessToken(),'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify(payload),signal:AbortSignal.timeout(15000)});}catch{throw new Error('MPESA_OUTCOME_UNKNOWN');}
+ const token=await accessToken();
+ let response:Response;try{response=await fetch(baseUrl()+'/mpesa/stkpush/v1/processrequest',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify(payload),signal:AbortSignal.timeout(15000)});}catch{throw new Error('MPESA_OUTCOME_UNKNOWN');}
  if(response.status>=500)throw new Error('MPESA_OUTCOME_UNKNOWN');
  const body=await response.json().catch(()=>({})) as {ResponseCode?:string;ResponseDescription?:string;CustomerMessage?:string;CheckoutRequestID?:string;MerchantRequestID?:string;errorMessage?:string};
  if(!response.ok||body.ResponseCode!==undefined&&body.ResponseCode!=='0')throw new Error('MPESA_STK_REJECTED: '+String(body.errorMessage??body.ResponseDescription??'Daraja rejected the STK request').slice(0,250));
