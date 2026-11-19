@@ -11,6 +11,7 @@ const schema=z.object({
  JWT_TTL_SECONDS:z.coerce.number().int().min(300).max(86400).default(3600),
  ADMIN_BOOTSTRAP_TOKEN:z.string().min(32).optional(),
  MPESA_ENV:z.enum(['sandbox','production']).default('sandbox'),
+ MPESA_TRANSACTION_TYPE:z.enum(['CustomerPayBillOnline','CustomerBuyGoodsOnline']).default('CustomerPayBillOnline'),
  MPESA_CONSUMER_KEY:z.string().min(1).optional(),
  MPESA_CONSUMER_SECRET:z.string().min(1).optional(),
  MPESA_SHORTCODE:z.string().regex(/^\d{5,7}$/).optional(),
