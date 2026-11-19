@@ -16,6 +16,13 @@ export class AgencyInvitationRepository {
     try {
       await client.query('BEGIN');
       await client.query('SELECT id FROM agencies WHERE id=$1 FOR UPDATE', [agencyId]);
+      const actor = await client.query<{ role: AgencyRole }>(
+        "SELECT role FROM agency_memberships WHERE agency_id=$1 AND user_id=$2 AND status='active' FOR UPDATE",
+        [agencyId, actorId]
+      );
+      const actorRole = actor.rows[0]?.role;
+      if (actorRole !== 'owner' && actorRole !== 'admin') throw new Error('ACTOR_NOT_AUTHORIZED');
+      if (actorRole === 'admin' && role === 'admin') throw new Error('INVITATION_ROLE_FORBIDDEN');
       const existing = await client.query(
         "SELECT id FROM agency_invitations WHERE agency_id=$1 AND lower(email)=lower($2) AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at>now() FOR UPDATE",
         [agencyId, email]
