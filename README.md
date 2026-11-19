@@ -70,4 +70,5 @@ See [the production-readiness checklist](docs/PRODUCTION-READINESS.md) before us
 - [Testing](docs/TESTING.md)
 - [Deployment](docs/DEPLOYMENT.md)
 - [Quality evidence](docs/QUALITY-EVIDENCE.md)
+- [M-Pesa integration](docs/MPESA-INTEGRATION.md)
 - [Changelog](CHANGELOG.md)
