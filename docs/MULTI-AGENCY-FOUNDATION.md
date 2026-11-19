@@ -19,6 +19,11 @@ No existing user role is rewritten, no property or enquiry is deleted, and no bi
 
 - `POST /api/v1/agencies` creates an agency, owner membership, and `agency.created` audit event in one transaction.
 - `GET /api/v1/agencies/me` returns only the caller's active memberships in active agencies.
+- `GET /api/v1/agencies/members` lists agency memberships for owners/admins only.
+- `PATCH /api/v1/agencies/members/{userId}` updates non-owner roles; admins can manage agent/viewer roles only, while owners can assign admin.
+- `DELETE /api/v1/agencies/members/{userId}` suspends non-owner memberships; self-removal and owner removal are blocked.
+- Role changes and member removals are audited transactionally. Repository transactions revalidate the actor's current role to prevent stale authorization decisions.
+- Invitation creation and revocation revalidate owner/admin authority inside their transactions; admins cannot issue admin invitations.
 - Authenticated write routes require a valid `X-Agency-ID` and verify active membership in that agency. A caller-supplied ID alone never grants access.
 - Property creation allows owner/admin/agent roles; agents may update or delete their own listings; owner/admin can manage agency listings.
 - Publication transitions are restricted to owner/admin and are audited transactionally.
@@ -28,7 +33,7 @@ No existing user role is rewritten, no property or enquiry is deleted, and no bi
 
 ## Audit and invitation boundaries
 
-The current audit trail covers agency creation (including bootstrap), property create/update/delete, and publication transitions. Listing audit events are committed or rolled back with their corresponding listing mutations. Invitation create/accept/revoke lifecycle and membership role updates/removals are audited transactionally.
+The current audit trail covers agency creation (including bootstrap), property create/update/delete, publication transitions, invitation create/accept/revoke, and membership role updates/removals. These mutation events are committed or rolled back with their corresponding state changes.
 
 ## Deployment and rollback
 
