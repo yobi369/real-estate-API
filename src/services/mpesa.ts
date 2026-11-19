@@ -3,12 +3,13 @@ import { config } from '../config.js';
 
 let cachedToken:{value:string;expiresAt:number}|null=null;
 const baseUrl=()=>config.MPESA_ENV==='production'?'https://api.safaricom.co.ke':'https://sandbox.safaricom.co.ke';
+const backslash=String.fromCharCode(92);
 export const isMpesaConfigured=()=>Boolean(config.MPESA_CONSUMER_KEY&&config.MPESA_CONSUMER_SECRET&&config.MPESA_SHORTCODE&&config.MPESA_PASSKEY&&config.MPESA_CALLBACK_BASE_URL&&config.MPESA_CALLBACK_SECRET);
 export function normalizeKenyanPhone(value:string):string{
- const digits=value.replace(/\D/g,'');
- if(/^254[17]\d{8}$/.test(digits))return digits;
- if(/^0[17]\d{8}$/.test(digits))return '254'+digits.slice(1);
- if(/^[17]\d{8}$/.test(digits))return '254'+digits;
+ const digits=value.replace(new RegExp(backslash+'D','g'),'');
+ if(new RegExp('^254[17]'+backslash+'d{8}$').test(digits))return digits;
+ if(new RegExp('^0[17]'+backslash+'d{8}$').test(digits))return '254'+digits.slice(1);
+ if(new RegExp('^[17]'+backslash+'d{8}$').test(digits))return '254'+digits;
  throw new Error('INVALID_MPESA_PHONE');
 }
 export function darajaTimestamp(date=new Date()):string{
@@ -37,14 +38,8 @@ export async function initiateStkPush(input:{phoneNumber:string;amountMinor:numb
  const password=Buffer.from(shortcode+config.MPESA_PASSKEY+timestamp).toString('base64');
  const callbackBase=config.MPESA_CALLBACK_BASE_URL!;
  const callback=(callbackBase.endsWith('/')?callbackBase.slice(0,-1):callbackBase)+'/api/v1/webhooks/mpesa/'+config.MPESA_CALLBACK_SECRET;
- const payload={BusinessShortCode:shortcode,Password:password,Timestamp:timestamp,TransactionType:'CustomerPayBillOnline',Amount:input.amountMinor/100,PartyA:phone,PartyB:shortcode,PhoneNumber:phone,CallBackURL:callback,AccountReference:'SP'+input.agencyId.replace(/-/g,'').slice(0,8),TransactionDesc:'Agency subscription'};
- const response=await fetch(baseUrl()+'/mpesa/stkpush/v1/processrequest',{method:'POST',headers:{Authorization:'Bearer '+await accessToken(),'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify(payload),signal:AbortSignal.timeout(15000)});
- const body=await response.json().catch(()=>({})) as {ResponseCode?:string;ResponseDescription?:string;CustomerMessage?:string;CheckoutRequestID?:string;MerchantRequestID?:string;errorMessage?:string};
- if(!response.ok||body.ResponseCode!=='0'||!body.CheckoutRequestID||!body.MerchantRequestID)throw new Error('MPESA_STK_REJECTED: '+String(body.errorMessage??body.ResponseDescription??'Daraja did not accept the STK request').slice(0,250));
- return {merchantRequestId:body.MerchantRequestID,checkoutRequestId:body.CheckoutRequestID,customerMessage:String(body.CustomerMessage??'Payment prompt sent to your phone')};
-}
-),'')+'/api/v1/webhooks/mpesa/'+config.MPESA_CALLBACK_SECRET;
- const payload={BusinessShortCode:shortcode,Password:password,Timestamp:timestamp,TransactionType:'CustomerPayBillOnline',Amount:input.amountMinor/100,PartyA:phone,PartyB:shortcode,PhoneNumber:phone,CallBackURL:callback,AccountReference:'SP'+input.agencyId.replace(/-/g,'').slice(0,8),TransactionDesc:'Agency subscription'};
+ const accountReference='SP'+input.agencyId.replaceAll('-','').slice(0,8);
+ const payload={BusinessShortCode:shortcode,Password:password,Timestamp:timestamp,TransactionType:'CustomerPayBillOnline',Amount:input.amountMinor/100,PartyA:phone,PartyB:shortcode,PhoneNumber:phone,CallBackURL:callback,AccountReference:accountReference,TransactionDesc:'Agency subscription'};
  const response=await fetch(baseUrl()+'/mpesa/stkpush/v1/processrequest',{method:'POST',headers:{Authorization:'Bearer '+await accessToken(),'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify(payload),signal:AbortSignal.timeout(15000)});
  const body=await response.json().catch(()=>({})) as {ResponseCode?:string;ResponseDescription?:string;CustomerMessage?:string;CheckoutRequestID?:string;MerchantRequestID?:string;errorMessage?:string};
  if(!response.ok||body.ResponseCode!=='0'||!body.CheckoutRequestID||!body.MerchantRequestID)throw new Error('MPESA_STK_REJECTED: '+String(body.errorMessage??body.ResponseDescription??'Daraja did not accept the STK request').slice(0,250));
