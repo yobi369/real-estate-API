@@ -1,23 +1,39 @@
 # Architecture
 
 ## Request flow
-1. Express applies security headers, CORS, bounded JSON parsing, and redacted structured logging.
-2. Auth routes validate payloads; passwords are scrypt-derived and bearer tokens are HMAC-SHA256 signed with expiry.
-3. Listing routes validate Zod contracts. Public read/search routes call the repository; create requires a principal; update/delete enforce owner or admin checks.
-4. Repository uses parameterized PostgreSQL statements when `DATABASE_URL` is configured. Development/test fallback is in-memory and never considered ready for production.
+
+1. Express applies Helmet security headers, configured CORS, strict JSON parsing (1 MiB), request IDs, and redacted structured logging.
+2. Authentication endpoints use scrypt password hashing and expiring HMAC-SHA256 bearer tokens. Bootstrap, registration, and login have separate process-local rate limits.
+3. Public property search and the fictional demo search are rate-limited. Public property reads expose only published inventory.
+4. Authenticated write routes resolve `X-Agency-ID` against the caller's active membership before performing tenant-scoped repository operations.
+5. Property create/update/delete and publication enforce agency roles. Enquiry inbox reads require an active owner/admin membership and are scoped to that agency.
+6. PostgreSQL repositories use parameterized statements. The in-memory adapter is development/test-only and does not satisfy readiness.
 
 ## Modules
-- `src/domain/property.ts`: property request/query schemas.
-- `src/auth.ts`: registration, password verification, token issuance/validation, principal middleware.
+
+- `src/domain/property.ts` and `src/domain/inquiry.ts`: request and query schemas.
+- `src/auth.ts`: registration, password verification, token issuance/validation, principal middleware, and first-admin bootstrap.
+- `src/rate-limit.ts`: reusable bounded-window, process-local request limiter.
 - `src/db.ts`: PostgreSQL pool and idempotent schema initialization.
-- `src/repositories/property-repository.ts`: PostgreSQL/in-memory adapters.
-- `src/app.ts`: HTTP composition and route authorization.
+- `src/repositories/property-repository.ts`: published inventory reads and agency-scoped property writes.
+- `src/repositories/inquiry-repository.ts`: enquiry persistence and agency routing.
+- `src/repositories/agency-repository.ts`: agency creation, active membership lookup, member listing, role changes, member removal, and transactional membership audit events.
+- `src/app.ts`: HTTP composition, validation, rate limits, and route authorization.
 - `src/config.ts`: fail-fast environment validation.
-- `src/server.ts`: schema initialization and graceful shutdown.
-- `tests/api.test.ts`: HTTP contract and authorization regressions.
+- `scripts/benchmark.mjs`: dependency-free HTTP benchmark runner.
+- `tests/`: HTTP, persistence, tenancy, and security regression coverage.
 
-## Data model
-`users` has a unique normalized email and password hash. `properties.owner_id` references users with a foreign key. Database constraints validate currency, listing types, and positive price. Indexes support owner, city, and price access.
+## Tenant model and access boundaries
 
-## Principles
-Validate at boundaries, use parameterized SQL, minimize privileges, make ownership checks server-side, keep error envelopes stable, and do not overstate verification.
+- Agencies own workspaces; memberships assign owner, admin, agent, or viewer roles.
+- `X-Agency-ID` is only a context selector. It grants no access by itself; the API checks the authenticated user's active membership.
+- Public listing reads filter to `publication_status='published'`; private agency reads/writes include agency scope.
+- Listing enquiries derive their agency from the referenced listing. General enquiries can resolve an active agency by slug.
+- Agency onboarding and first-admin bootstrap create the agency, owner membership, and audit event transactionally.
+- Listing create/update/delete and publication transitions write audit events in the same PostgreSQL transaction as the listing change.
+- Invitation create/accept/revoke and membership role updates/removals write audit events transactionally with their state changes.
+- Agency owners can manage all non-owner roles; admins are restricted to agent/viewer management. Owner role changes and removals are blocked pending a dedicated ownership-transfer workflow.
+
+## Data and operational principles
+
+Validate at boundaries, use parameterized SQL, keep public responses free of owner/agency identifiers, enforce tenant scope server-side, and avoid treating a green CI run as proof of production readiness. Process-local rate limits are single-instance controls; use a shared store or edge/WAF enforcement before horizontal scaling.

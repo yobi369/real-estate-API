@@ -1,10 +1,10 @@
 name: CI
 concurrency:
-  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 on:
   push:
-    branches: [main, 'upgrade/**', 'sales/**', 'integration/**']
+    branches: [main, 'upgrade/**', 'sales/**', 'integration/**', 'feature/**']
   pull_request:
     branches: [main, 'sales/**']
   workflow_dispatch:
@@ -38,6 +38,8 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
       - run: npm install
+      - name: Audit all dependencies
+        run: npm audit --audit-level=low
       - name: Audit production dependencies
         run: npm audit --omit=dev --audit-level=high
       - run: npm run verify
