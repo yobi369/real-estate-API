@@ -132,6 +132,7 @@ app.post('/api/v1/agencies/invitations/accept',authenticate,async(req,res)=>{
   if(error instanceof Error&&error.message==='PERSISTENCE_REQUIRED')return res.status(503).json({error:{code:'PERSISTENCE_REQUIRED',message:'Agency invitations require PostgreSQL persistence'}});
   if(error instanceof Error&&error.message==='INVITATION_EMAIL_MISMATCH')return res.status(403).json({error:{code:'INVITATION_EMAIL_MISMATCH',message:'Sign in with the email address this invitation was sent to'}});
   if(error instanceof Error&&error.message==='INVITATION_INVALID')return res.status(400).json({error:{code:'INVITATION_INVALID',message:'Invitation is invalid, expired, revoked, or already accepted'}});
+  if(error instanceof Error&&error.message==='MEMBERSHIP_ALREADY_ACTIVE')return res.status(409).json({error:{code:'MEMBERSHIP_ALREADY_ACTIVE',message:'You already have an active membership in this agency'}});
   throw error;
  }
 });
