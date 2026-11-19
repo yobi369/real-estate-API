@@ -17,8 +17,8 @@ async function getAgencyId(token: string): Promise<string> {
   expect(response.status).toBe(200);
   const agencyId = response.body.data.items[0].id as string;
   if (pool) {
-    const planId = '00000000-0000-4000-8000-000000000254';
-    await pool.query("INSERT INTO subscription_plans(id,code,name,price_minor,billing_interval,max_listings,max_members,is_active) VALUES($1,'test-unlimited','Test Unlimited',100,'month',NULL,NULL,true) ON CONFLICT(code) DO UPDATE SET is_active=true,max_listings=NULL,max_members=NULL", [planId]);
+    const planId = randomUUID();
+    await pool.query("INSERT INTO subscription_plans(id,code,name,price_minor,billing_interval,max_listings,max_members,is_active) VALUES($1,$2,'Test Unlimited',100,'month',NULL,NULL,true)", [planId, 'test-unlimited-' + agencyId.slice(0, 8)]);
     await pool.query("INSERT INTO agency_subscriptions(id,agency_id,plan_id,status,provider,current_period_start,current_period_end) SELECT gen_random_uuid(),$1,$2,'active','manual',now(),now()+interval '30 days' WHERE NOT EXISTS(SELECT 1 FROM agency_subscriptions WHERE agency_id=$1 AND status IN ('active','trialing'))", [agencyId, planId]);
   }
   return agencyId;
