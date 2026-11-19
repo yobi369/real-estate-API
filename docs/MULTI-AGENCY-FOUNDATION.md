@@ -4,7 +4,7 @@
 
 - `agencies`: agency/workspace identity and lifecycle.
 - `agency_memberships`: per-user agency role and membership state.
-- `agency_invitations`: expiring, hashed invitation-token storage (no invitation API yet).
+- `agency_invitations`: expiring, hashed invitation-token storage with acceptance and revocation state.
 - `audit_events`: append-oriented event storage.
 - Nullable `agency_id` tenant references on properties and enquiries during compatibility rollout.
 - Roles: `owner`, `admin`, `agent`, and `viewer`. Invitation roles exclude owner.
@@ -28,7 +28,7 @@ No existing user role is rewritten, no property or enquiry is deleted, and no bi
 
 ## Audit and invitation boundaries
 
-The current audit trail covers agency creation (including bootstrap), property create/update/delete, and publication transitions. Listing audit events are committed or rolled back with their corresponding listing mutations. Invitation lifecycle and membership administration are not yet covered by audit events. Invitation tables are present, but invitation create/accept/revoke endpoints are not implemented. Do not represent those capabilities as complete.
+The current audit trail covers agency creation (including bootstrap), property create/update/delete, and publication transitions. Listing audit events are committed or rolled back with their corresponding listing mutations. Invitation create/accept/revoke lifecycle is audited transactionally. Membership role administration and member removal remain unimplemented. Do not represent those capabilities as complete.
 
 ## Deployment and rollback
 
@@ -40,4 +40,4 @@ The current audit trail covers agency creation (including bootstrap), property c
 
 ## Milestone boundary
 
-The branch now provides the multi-agency schema, onboarding, membership-based context resolution, agency-scoped property writes, publication lifecycle, and agency-scoped enquiry inbox. It does not yet provide invitation workflows, billing, M-Pesa collection, distributed rate limiting, or complete audit coverage. Production onboarding remains blocked on the release gates in [PRODUCTION-READINESS.md](PRODUCTION-READINESS.md).
+The branch now provides the multi-agency schema, onboarding, membership-based context resolution, agency-scoped property writes, publication lifecycle, and agency-scoped enquiry inbox. It now provides invitation creation, email-bound acceptance, and revocation. It does not yet provide membership role administration, billing, M-Pesa collection, distributed rate limiting, or complete audit coverage. Production onboarding remains blocked on the release gates in [PRODUCTION-READINESS.md](PRODUCTION-READINESS.md).
