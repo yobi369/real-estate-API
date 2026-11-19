@@ -42,7 +42,7 @@ The secret is part of the callback URL and must be treated as a credential. The 
 
 ## Plan activation
 
-Subscription plan rows are inactive by default. Before checkout can be used, approve the final plan names, KES prices, listing/member/API limits, and billing interval, then insert and activate the approved rows in `subscription_plans`. Do not enable placeholder or zero-value prices.
+Subscription plan rows are inactive by default. Starter (KSh 2,500/month), Professional (KSh 5,000/month), and Business (KSh 12,000/month) are seeded as inactive plans. Before checkout can be enabled, approve listing/member/API limits and the final feature matrix, enforce the limits in the API, and explicitly activate the approved rows in `subscription_plans`. Do not enable placeholder or zero-value prices.
 
 M-Pesa amounts are whole KES. The checkout endpoint rejects plan prices that are not whole-KES amounts.
 
