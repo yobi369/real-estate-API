@@ -5,8 +5,10 @@
 1. Install Node.js 22+ and PostgreSQL 16+.
 2. Copy `.env.example` to `.env`; configure `DATABASE_URL`.
 3. Replace `JWT_SECRET` with a unique random secret (for example, `openssl rand -base64 48`).
-4. Run `npm install`, then `npm run dev`. Startup currently applies idempotent schema initialization.
-5. Check `/health/live`, `/health/ready`, and `/docs/`.
+4. Run `npm install`, then `npm run db:migrate` to initialize/update the schema.
+5. Start the API with `npm run dev` and check `/health/live`, `/health/ready`, and `/docs/`.
+
+The server no longer performs schema DDL at startup. In production, `DATABASE_URL` is the least-privilege runtime role; `MIGRATION_DATABASE_URL` is a separate privileged credential supplied only to the one-off migration job.
 
 ## CI
 
