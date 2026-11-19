@@ -53,7 +53,8 @@ This checklist separates implemented controls from external or incomplete releas
 ### Commercial billing and API monetization
 - [ ] [x] Confirmed initial monthly KES prices: Starter KSh 2,500; Professional KSh 5,000; Business KSh 12,000. Plans are seeded inactive.
 - [x] Approve and seed Starter (25 listings/3 seats), Professional (100 listings/10 seats), and Business (500 listings/30 seats) quotas; plans remain inactive pending payment acceptance.
-- [x] Enforce active-subscription requirement and listing/team-seat quotas; drafts and published listings count, archived listings do not, and active members plus pending invitations consume seats.
+- [x] Enforce listing/team-seat quotas for agencies with a current paid/trial subscription; drafts and published listings count, archived listings do not, and active members plus pending invitations consume seats.
+- [ ] Decide and enforce subscription/grace-period access for new workspaces and existing agencies before public commercial launch.
 - [ ] Define trial policy, grace period, refund/cancellation terms, and API request quotas; paid API access remains a separate product.
 - [ ] Verify Daraja sandbox and production acceptance gates in [M-Pesa integration](MPESA-INTEGRATION.md); configure credentials only in the managed secret store.
 - [ ] Build API-key issuance/revocation, developer accounts, usage metering, per-plan quotas, and paid API access as the second commercial product.
