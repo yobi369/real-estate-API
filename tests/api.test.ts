@@ -145,14 +145,14 @@ describe('agency membership administration',()=>{
     const agent=await invite(owner,agency,'membership-agent@example.com','agent');
     const agentId=(await request(app).get('/api/v1/agencies/members')
       .set('Authorization',`Bearer ${owner}`).set('X-Agency-ID',agency)).body.data.items
-      .find((member:{email:string})=>member.email==='membership-agent@example.com').userId;
+      .find((member:{email:string})=>member.email==='membership-agent@example.com')!.userId;
     const listing=await request(app).get('/api/v1/agencies/members')
       .set('Authorization',`Bearer ${owner}`).set('X-Agency-ID',agency);
     expect(listing.status).toBe(200);
     expect(listing.body.data.items.map((member:{role:string})=>member.role)).toContain('owner');
     expect((await request(app).patch(`/api/v1/agencies/members/${agentId}`)
       .set('Authorization',`Bearer ${owner}`).set('X-Agency-ID',agency).send({role:'viewer'})).status).toBe(200);
-    expect((await request(app).patch(`/api/v1/agencies/members/${(await request(app).get('/api/v1/agencies/members').set('Authorization',`Bearer ${owner}`).set('X-Agency-ID',agency)).body.data.items.find((m:{email:string})=>m.email==='membership-owner@example.com').userId}`)
+    expect((await request(app).patch(`/api/v1/agencies/members/${(await request(app).get('/api/v1/agencies/members').set('Authorization',`Bearer ${owner}`).set('X-Agency-ID',agency)).body.data.items.find((m:{email:string})=>m.email==='membership-owner@example.com')!.userId}`)
       .set('Authorization',`Bearer ${owner}`).set('X-Agency-ID',agency).send({role:'viewer'})).status).toBe(409);
     expect((await request(app).delete(`/api/v1/agencies/members/${agentId}`)
       .set('Authorization',`Bearer ${owner}`).set('X-Agency-ID',agency)).status).toBe(204);
@@ -170,8 +170,8 @@ describe('agency membership administration',()=>{
     const admin=await invite(owner,agency,'membership-admin@example.com','admin');
     const agent=await invite(owner,agency,'membership-agent-two@example.com','agent');
     const members=(await request(app).get('/api/v1/agencies/members').set('Authorization',`Bearer ${owner}`).set('X-Agency-ID',agency)).body.data.items;
-    const adminId=members.find((m:{email:string})=>m.email==='membership-admin@example.com').userId;
-    const agentId=members.find((m:{email:string})=>m.email==='membership-agent-two@example.com').userId;
+    const adminId=members.find((m:{email:string})=>m.email==='membership-admin@example.com')!.userId;
+    const agentId=members.find((m:{email:string})=>m.email==='membership-agent-two@example.com')!.userId;
     expect((await request(app).get('/api/v1/agencies/members').set('Authorization',`Bearer ${agent}`).set('X-Agency-ID',agency)).status).toBe(403);
     expect((await request(app).patch(`/api/v1/agencies/members/${agentId}`).set('Authorization',`Bearer ${admin}`).set('X-Agency-ID',agency).send({role:'admin'})).status).toBe(403);
     expect((await request(app).delete(`/api/v1/agencies/members/${adminId}`).set('Authorization',`Bearer ${admin}`).set('X-Agency-ID',agency)).status).toBe(403);
