@@ -1,67 +1,62 @@
 # Production Readiness Checklist
 
-This checklist separates existing engineering capabilities from work still required before a customer production deployment. A checked item is not implied by the existence of a code path; retain evidence for each completed gate.
+This checklist separates implemented controls from external or incomplete release gates. A checked item requires code or CI evidence; it does not imply that a production environment has been provisioned or independently assessed.
 
-## Current implementation evidence
+## Implemented code and CI evidence
 
-- [x] TypeScript/Express REST API with versioned `/api/v1` routes.
-- [x] PostgreSQL repository with constraints and indexes when `DATABASE_URL` is configured.
-- [x] Ephemeral in-memory adapter restricted to development/test; readiness returns 503 without PostgreSQL.
-- [x] Password hashing using Node.js scrypt.
-- [x] Expiring HMAC-signed bearer tokens and owner/admin checks for listing writes.
-- [x] Input validation, Helmet headers, bounded JSON body, configurable CORS and redacted authorization/cookie/bootstrap-token logging.
-- [x] Rate limiting for public customer enquiries (10 per client IP per 15 minutes per API process).
-- [x] Health/readiness endpoints and Swagger UI/OpenAPI endpoint.
-- [x] CI verification against Node 22/24 and PostgreSQL 16 (see QUALITY-EVIDENCE.md).
-- [x] Isolated fictional sample data and read-only search endpoint for the public demonstration.
+- [x] Versioned TypeScript/Express API with OpenAPI/Swagger and liveness/readiness endpoints.
+- [x] PostgreSQL repositories, constraints, indexes, and additive multi-agency schema initialization.
+- [x] Development/test in-memory adapter; readiness returns 503 without PostgreSQL.
+- [x] Scrypt password hashing, expiring HMAC-signed bearer tokens, and secret-protected first-admin bootstrap.
+- [x] Agency onboarding, active membership context resolution, agency-scoped listing writes, publication lifecycle, and scoped enquiry inbox.
+- [x] Public reads restricted to published listings; public responses omit owner and agency identifiers.
+- [x] Input validation, Helmet, configured CORS, request IDs, redacted sensitive headers, and bounded JSON body parsing.
+- [x] Process-local rate limits for bootstrap, registration, login, public search/demo, and enquiries; limits are not distributed.
+- [x] Security regression tests for headers, auth throttling, and oversized JSON payload handling (CI result pending for the current feature branch revision).
+- [x] Dependency-free HTTP benchmark runner and documented evidence procedure; no production capacity claim has been established.
+- [x] CI workflow audits production dependencies and runs typecheck, tests, build, and lint on Node 22/24 with PostgreSQL 16.
 
-## Required before any customer production launch
+## Required before customer production launch
 
 ### Infrastructure and database
-- [ ] Provision a dedicated production PostgreSQL instance and least-privilege database role.
-- [ ] Enforce TLS for client-to-service and service-to-database connections.
-- [ ] Configure managed secrets; generate a unique production JWT secret.
-- [ ] Define automated backups, retention, point-in-time recovery where available, and perform a restore drill.
-- [ ] Define migration execution, rollback strategy and deployment ownership.
-- [ ] Configure production CORS to only the customer's approved origins.
+- [ ] Provision dedicated production PostgreSQL and a least-privilege DB role.
+- [ ] Verify TLS settings for service and database connections in the target host.
+- [ ] Store a unique JWT secret and deployment credentials in a managed secret store.
+- [ ] Configure automated backups/retention and complete a restore drill.
+- [ ] Define controlled migration execution, rollback, and deployment ownership.
+- [ ] Configure CORS to the customer's approved origins and verify proxy trust settings.
 
 ### Identity and application security
-- [ ] Add shared/distributed rate limiting and abuse controls for authentication and public search; the current enquiry limiter is process-local.
-- [ ] Implement email verification and secure password reset.
-- [ ] Define token revocation/rotation and account/session lifecycle.
-- [x] Add one-time secret-protected bootstrap for the first administrator; remove the bootstrap secret after setup.
-- [ ] Add auditable operator actions and administrator lifecycle/recovery procedures.
-- [ ] Add security audit events for sensitive listing and account changes.
-- [ ] Complete dependency, secret and static-analysis scans; resolve material findings.
-- [ ] Conduct independent security review and penetration testing.
-- [ ] Confirm request timeouts, payload limits and safe error handling under failure.
+- [ ] Replace process-local rate limits with shared/distributed enforcement or an edge/WAF equivalent before scaling horizontally.
+- [ ] Implement email verification, secure password reset, token revocation/rotation, and account/session lifecycle controls.
+- [ ] Extend audit events to listing create/update/delete, membership administration, invitations, and privileged operations.
+- [ ] Implement invitation create/accept/revoke endpoints; schema storage alone is not an invitation workflow.
+- [ ] Complete dependency, secret, and static-analysis review and resolve material findings.
+- [ ] Conduct independent authorization review and penetration testing.
+- [ ] Validate request timeouts, payload limits, and failure handling in the deployed environment.
 
-### Reliability and operations
-- [ ] Add centralised monitoring, structured alerting and an incident response owner.
-- [ ] Add uptime, latency, error-rate and database-capacity monitoring.
-- [ ] Perform load and concurrency testing against agreed usage assumptions.
-- [ ] Document service recovery, escalation and support hours.
+### Reliability and performance
+- [ ] Run the documented benchmark against representative staging property-search and authenticated-write workloads.
+- [ ] Record region, instance size, database tier, concurrency, request count, p50/p95/p99, error rate, and raw JSON output.
+- [ ] Add central monitoring, alerting, database-capacity monitoring, and an incident response owner.
 - [ ] Test deployment rollback and database restore procedures.
-- [ ] Confirm production health/readiness behaviour after deployment.
+- [ ] Verify live health/readiness, OpenAPI, and critical API flows after deployment.
 
 ### Customer and data governance
 - [ ] Agree data controller/processor responsibilities and applicable Kenyan data-protection obligations with the customer.
-- [ ] Document permitted data fields, purpose, retention, deletion and access rules.
-- [ ] Confirm property listing accuracy, rights to publish, and client approval workflow.
-- [ ] Define ownership of client data, export/exit procedure and access revocation at contract end.
-- [ ] Sign off client-specific acceptance tests using authorised test data before migration.
-- [ ] Obtain written approval before loading any live customer or personal data.
+- [ ] Document permitted fields, purpose, retention, deletion, and access rules.
+- [ ] Confirm listing accuracy, rights to publish, and client approval workflow.
+- [ ] Define data export/exit and access revocation at contract end.
+- [ ] Sign off customer acceptance tests using authorised test data.
+- [ ] Obtain written approval before loading live customer or personal data.
 
-## Demo-specific safeguards
+## Demo safeguards
 
-- [x] Demo inventory is fictional and separated from the customer property repository.
-- [x] Demo endpoint is read-only and supports search/filter/pagination.
-- [ ] Verify the deployed demo URL and all sample queries after deployment.
-- [ ] Confirm Swagger UI and OpenAPI endpoint are reachable from the public host.
-- [ ] Ensure no secrets, private customer data or real property contact details appear in screenshots or sample records.
+- [x] Fictional sample inventory is separate from operational customer listings.
+- [x] Demo search is read-only.
+- [ ] Verify deployed demo, Swagger UI, and OpenAPI endpoints after deployment.
+- [ ] Check screenshots/sample records for secrets and personal/customer information.
 
 ## Release decision
 
-**Current status:** Demonstration candidate, not approved for production customer data.
-
-A production go-live requires evidence for every applicable unchecked item, a named customer owner, an approved deployment plan and signed acceptance criteria. Record exceptions and risk acceptance explicitly rather than silently waiving a gate.
+**Current status: demonstration candidate; not approved for customer production data.** A production go-live requires evidence for all applicable gates, a named customer owner, approved deployment plan, and signed acceptance criteria. Record risk exceptions explicitly.
