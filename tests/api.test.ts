@@ -44,6 +44,10 @@ describe('subscription payment lifecycle',()=>{
   const duplicate=await payments.processCallback(callback);expect(duplicate.duplicate).toBe(true);
   const afterDuplicate=await pool.query<{current_period_end:Date}>('SELECT current_period_end FROM agency_subscriptions WHERE agency_id=$1',[agency]);
   expect(afterDuplicate.rows[0]!.current_period_end.toISOString()).toBe(periodEnd);
+  const cancel=await request(app).post('/api/v1/billing/subscription/cancel').set('Authorization','Bearer '+owner).set('X-Agency-ID',agency);
+  expect(cancel.status).toBe(200);
+  const current=await request(app).get('/api/v1/billing/subscription').set('Authorization','Bearer '+owner).set('X-Agency-ID',agency);
+  expect(current.body.data.subscription.cancelAtPeriodEnd).toBe(true);
   const otherOwner=await register('billing-payment-owner2@example.com');
   const otherAgency=await request(app).post('/api/v1/agencies').set('Authorization','Bearer '+otherOwner).send({name:'Second Billing Agency'});
   const otherAttempt=await payments.createAttempt(otherAgency.body.data.id,plan!,'billing-idempotency-key-0003','254712345678');
