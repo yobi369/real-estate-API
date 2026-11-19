@@ -1,58 +1,43 @@
 # Multi-agency foundation
 
-## Purpose
-
-Prepare Real Estate API for multiple independent agencies while preserving the existing Secure Properties deployment and its current records.
-
-## Schema introduced
+## Implemented foundation
 
 - `agencies`: agency/workspace identity and lifecycle.
-- `agency_memberships`: one user's role and membership state within an agency.
-- `agency_invitations`: expiring, hashed invitation-token records.
-- `audit_events`: append-oriented audit event storage.
-- `properties.agency_id` and `inquiries.agency_id`: nullable tenant references during the compatibility phase.
-
-Supported agency membership roles are `owner`, `admin`, `agent` and `viewer`. Invitation roles exclude `owner`; ownership must not be granted by an invitation token.
+- `agency_memberships`: per-user agency role and membership state.
+- `agency_invitations`: expiring, hashed invitation-token storage (no invitation API yet).
+- `audit_events`: append-oriented event storage.
+- Nullable `agency_id` tenant references on properties and enquiries during compatibility rollout.
+- Roles: `owner`, `admin`, `agent`, and `viewer`. Invitation roles exclude owner.
 
 ## Existing-data migration
 
-When existing users are present, the migration creates a `legacy-default` agency. The oldest existing administrator is selected as its owner; if no administrator exists, the oldest account is selected. Existing administrators receive agency-admin membership, property owners receive agent membership unless they are the selected owner, and existing properties and enquiries are associated with the default agency.
+The idempotent schema initialization creates a `legacy-default` agency when users already exist. The oldest existing administrator is selected as its owner; if no administrator exists, the oldest account is selected. Existing administrators receive agency-admin membership, property owners receive agent membership unless they are the selected owner, and existing properties and enquiries are associated with the default agency.
 
-The migration is additive and idempotent. Tenant columns remain nullable for legacy compatibility. No existing user role is rewritten, no property or enquiry is deleted, and no billing is introduced.
+No existing user role is rewritten, no property or enquiry is deleted, and no billing is introduced. When no users exist, the default agency is created by the first-admin/bootstrap transaction instead.
 
-If the database has no users when this migration runs, no default agency is created. The first-admin/bootstrap flow now creates a private default agency, owner membership and audit event in the same transaction as the initial administrator.
+## Implemented API and authorization
 
-## Security rules for the next implementation steps
+- `POST /api/v1/agencies` creates an agency, owner membership, and `agency.created` audit event in one transaction.
+- `GET /api/v1/agencies/me` returns only the caller's active memberships in active agencies.
+- Authenticated write routes require a valid `X-Agency-ID` and verify active membership in that agency. A caller-supplied ID alone never grants access.
+- Property creation allows owner/admin/agent roles; agents may update or delete their own listings; owner/admin can manage agency listings.
+- Publication transitions are restricted to owner/admin and are audited transactionally.
+- Public property search/detail return only published listings and omit owner and agency identifiers.
+- Listing enquiries derive agency routing from the listing record; general enquiries may select an active agency by slug. The inbox is restricted to agency owner/admin and scoped to the selected agency.
+- Cross-agency property mutation and enquiry-inbox isolation have regression coverage.
 
-1. Resolve agency context from the authenticated user's active membership, never from a client-supplied agency ID.
-2. Enforce role permissions in server-side middleware and repository queries.
-3. Scope every private property and enquiry read/write by agency ID.
-4. Keep public marketplace reads limited to intentionally published/approved listings.
-5. Add negative tests proving Agency A cannot read or mutate Agency B records.
-6. Record sensitive membership, listing and agency changes in `audit_events`.
+## Audit and invitation boundaries
+
+The current audit trail covers agency creation (including bootstrap) and property publication transitions. Property create/update/delete, invitation lifecycle, and membership administration are not yet covered by audit events. Invitation tables are present, but invitation create/accept/revoke endpoints are not implemented. Do not represent those capabilities as complete.
 
 ## Deployment and rollback
 
-- Take and verify a PostgreSQL backup before production migration.
-- Apply the additive schema migration during a controlled deployment.
-- Verify the `legacy-default` agency, membership rows and property/enquiry counts.
+- Take and verify a PostgreSQL backup before applying schema changes to customer data.
+- Apply schema initialization during a controlled deployment and verify the legacy agency, membership rows, and property/enquiry counts.
 - Keep the previous application release available for rollback.
-- Application rollback is compatible because old code ignores the new tables and nullable columns.
-- Do not drop the new tables or columns as part of an application rollback. Restore from a verified backup only if database-level recovery is required.
-- Do not load new customer production data until tenant-scoped authorization and cross-agency isolation tests pass.
+- Application rollback is compatible with additive tables and nullable columns; do not drop new tables or columns during rollback.
+- Do not load customer production data until tenant-scoped authorization tests, backup/restore drills, and customer acceptance checks are complete.
 
-## Current milestone boundary
+## Milestone boundary
 
-This change establishes the database foundation only. It does **not** yet provide agency registration, invitations, tenant-aware JWT claims, tenant-scoped API authorization, subscription billing or M-Pesa collection. Those remain separate acceptance gates.
-
-## Agency onboarding API (implemented on the feature branch)
-
-- `POST /api/v1/agencies` requires a valid bearer token and a strict JSON body containing a 2–160 character agency name.
-- Creation runs in one PostgreSQL transaction: agency, owner membership and `agency.created` audit event either all commit or all roll back.
-- The creator receives the `owner` membership role. The response includes the agency ID, generated unique slug, status and creation timestamp.
-- `GET /api/v1/agencies/me` returns only active agencies for which the authenticated user has an active membership.
-- Both endpoints return a clear persistence-required response when PostgreSQL is unavailable; agency data is never silently stored in process memory.
-
-## Remaining tenant security gate
-
-Agency onboarding is not yet the same as complete tenant isolation. Property creation/update/delete and enquiry workflows still need agency-aware authorization and repository scoping. Do not onboard paying customers or represent listing access as tenant-isolated until those gates and cross-agency denial tests are complete.
+The branch now provides the multi-agency schema, onboarding, membership-based context resolution, agency-scoped property writes, publication lifecycle, and agency-scoped enquiry inbox. It does not yet provide invitation workflows, billing, M-Pesa collection, distributed rate limiting, or complete audit coverage. Production onboarding remains blocked on the release gates in [PRODUCTION-READINESS.md](PRODUCTION-READINESS.md).
