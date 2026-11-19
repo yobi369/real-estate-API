@@ -93,6 +93,12 @@ export class AgencyInvitationRepository {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
+      await client.query('SELECT id FROM agencies WHERE id=$1 FOR UPDATE', [agencyId]);
+      const actor = await client.query<{ role: AgencyRole }>(
+        "SELECT role FROM agency_memberships WHERE agency_id=$1 AND user_id=$2 AND status='active' FOR UPDATE",
+        [agencyId, actorId]
+      );
+      if (actor.rows[0]?.role !== 'owner' && actor.rows[0]?.role !== 'admin') throw new Error('ACTOR_NOT_AUTHORIZED');
       const result = await client.query<{ email: string; role: InvitationRole }>(
         "UPDATE agency_invitations SET revoked_at=now() WHERE id=$1 AND agency_id=$2 AND accepted_at IS NULL AND revoked_at IS NULL RETURNING email,role",
         [invitationId, agencyId]
