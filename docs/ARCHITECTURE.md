@@ -30,7 +30,7 @@
 - Public listing reads filter to `publication_status='published'`; private agency reads/writes include agency scope.
 - Listing enquiries derive their agency from the referenced listing. General enquiries can resolve an active agency by slug.
 - Agency onboarding and first-admin bootstrap create the agency, owner membership, and audit event transactionally.
-- Publication transitions write an audit event transactionally. Broader listing and membership audit coverage remains a production gate.
+- Listing create/update/delete and publication transitions write audit events in the same PostgreSQL transaction as the listing change. Membership and invitation lifecycle audit coverage remains a production gate.
 - Invitation storage exists in the schema, but invitation management/acceptance endpoints are not implemented.
 
 ## Data and operational principles
