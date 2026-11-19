@@ -17,7 +17,7 @@
 - `src/db.ts`: PostgreSQL pool and idempotent schema initialization.
 - `src/repositories/property-repository.ts`: published inventory reads and agency-scoped property writes.
 - `src/repositories/inquiry-repository.ts`: enquiry persistence and agency routing.
-- `src/repositories/agency-repository.ts`: agency creation, active membership lookup, and membership listing.
+- `src/repositories/agency-repository.ts`: agency creation, active membership lookup, member listing, role changes, member removal, and transactional membership audit events.
 - `src/app.ts`: HTTP composition, validation, rate limits, and route authorization.
 - `src/config.ts`: fail-fast environment validation.
 - `scripts/benchmark.mjs`: dependency-free HTTP benchmark runner.
@@ -30,8 +30,9 @@
 - Public listing reads filter to `publication_status='published'`; private agency reads/writes include agency scope.
 - Listing enquiries derive their agency from the referenced listing. General enquiries can resolve an active agency by slug.
 - Agency onboarding and first-admin bootstrap create the agency, owner membership, and audit event transactionally.
-- Listing create/update/delete and publication transitions write audit events in the same PostgreSQL transaction as the listing change. Membership and invitation lifecycle audit coverage remains a production gate.
-- Invitation storage exists in the schema, but invitation management/acceptance endpoints are not implemented.
+- Listing create/update/delete and publication transitions write audit events in the same PostgreSQL transaction as the listing change.
+- Invitation create/accept/revoke and membership role updates/removals write audit events transactionally with their state changes.
+- Agency owners can manage all non-owner roles; admins are restricted to agent/viewer management. Owner role changes and removals are blocked pending a dedicated ownership-transfer workflow.
 
 ## Data and operational principles
 
