@@ -138,6 +138,8 @@ app.patch('/api/v1/agencies/members/:userId',authenticate,async(req,res)=>{
  }catch(error){
   if(error instanceof Error&&error.message==='PERSISTENCE_REQUIRED')return res.status(503).json({error:{code:'PERSISTENCE_REQUIRED',message:'Agency membership administration requires PostgreSQL persistence'}});
   if(error instanceof Error&&error.message==='OWNER_ROLE_IMMUTABLE')return res.status(409).json({error:{code:'OWNER_ROLE_IMMUTABLE',message:'The agency owner role cannot be changed'}});
+  if(error instanceof Error&&error.message==='ROLE_CHANGE_FORBIDDEN')return res.status(403).json({error:{code:'ROLE_CHANGE_FORBIDDEN',message:'Admins may only manage agent and viewer memberships'}});
+  if(error instanceof Error&&error.message==='ACTOR_NOT_AUTHORIZED')return res.status(403).json({error:{code:'FORBIDDEN',message:'Your agency membership does not permit this operation'}});
   throw error;
  }
 });
@@ -158,6 +160,8 @@ app.delete('/api/v1/agencies/members/:userId',authenticate,async(req,res)=>{
  }catch(error){
   if(error instanceof Error&&error.message==='PERSISTENCE_REQUIRED')return res.status(503).json({error:{code:'PERSISTENCE_REQUIRED',message:'Agency membership administration requires PostgreSQL persistence'}});
   if(error instanceof Error&&error.message==='LAST_OWNER_PROTECTED')return res.status(409).json({error:{code:'LAST_OWNER_PROTECTED',message:'The agency owner cannot be removed'}});
+  if(error instanceof Error&&error.message==='MEMBER_REMOVAL_FORBIDDEN')return res.status(403).json({error:{code:'MEMBER_REMOVAL_FORBIDDEN',message:'Admins may only remove agents and viewers'}});
+  if(error instanceof Error&&error.message==='ACTOR_NOT_AUTHORIZED')return res.status(403).json({error:{code:'FORBIDDEN',message:'Your agency membership does not permit this operation'}});
   throw error;
  }
 });
