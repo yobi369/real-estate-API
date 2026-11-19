@@ -55,7 +55,7 @@ The agency workspace is planned as a separate recurring product. The initial mon
 | Professional | KSh 5,000 |
 | Business | KSh 12,000 |
 
-These are subscription prices, not the one-time integration pilot fee above. Listing and team-seat quotas, API access, support response times, taxes, and any onboarding fees must be agreed in the order form before a plan is activated. The seeded application plans remain inactive until those limits and the M-Pesa acceptance tests are complete.
+These are subscription prices, not the one-time integration pilot fee above. Approved allowances are Starter: 25 active listings and 3 team seats; Professional: 100 active listings and 10 team seats; Business: 500 active listings and 30 team seats. Draft and published listings count; archived listings do not. Active members and pending invitations consume team seats. New listings and invitations require a current paid/trial subscription. API request quotas and paid API access are not included and will be offered separately after metering and developer-key controls are implemented. Support response times, taxes, onboarding, grace periods, and refund/cancellation terms must be agreed in the order form. Plans remain inactive until M-Pesa acceptance tests and operational release gates are complete.
 
 ## Security, data and ownership
 
