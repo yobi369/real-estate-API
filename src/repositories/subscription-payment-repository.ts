@@ -36,6 +36,38 @@ export class SubscriptionPaymentRepository {
   if(!pool)throw new Error('PERSISTENCE_REQUIRED');
   await pool.query('UPDATE subscription_payments SET status=\'failed\',result_code=$2,result_description=$3,updated_at=now() WHERE id=$1 AND status IN (\'initiated\',\'pending\')',[paymentId,code.slice(0,80),description.slice(0,500)]);
  }
+ async getForReconciliation(agencyId:string,paymentId:string):Promise<PaymentAttempt|null>{
+  if(!pool)throw new Error('PERSISTENCE_REQUIRED');
+  const r=await pool.query('SELECT p.*,s.code AS plan_code FROM subscription_payments p JOIN subscription_plans s ON s.id=p.plan_id WHERE p.agency_id=$1 AND p.id=$2',[agencyId,paymentId]);
+  return r.rows[0]?this.mapPayment(r.rows[0]):null;
+ }
+ async processQuery(input:{agencyId:string;paymentId:string;resultCode:number|null;resultDescription:string;payload:unknown}):Promise<{found:boolean;status:string;duplicate:boolean}>{
+  if(!pool)throw new Error('PERSISTENCE_REQUIRED');
+  const client=await pool.connect();
+  try{
+   await client.query('BEGIN');
+   const found=await client.query('SELECT p.*,s.billing_interval FROM subscription_payments p JOIN subscription_plans s ON s.id=p.plan_id WHERE p.agency_id=$1 AND p.id=$2 FOR UPDATE',[input.agencyId,input.paymentId]);
+   const payment=found.rows[0];
+   if(!payment){await client.query('ROLLBACK');return {found:false,status:'not_found',duplicate:false};}
+   if(payment.status==='succeeded'||payment.status==='failed'||payment.status==='expired'){await client.query('COMMIT');return {found:true,status:payment.status,duplicate:true};}
+   if(input.resultCode===null){await client.query('COMMIT');return {found:true,status:'pending',duplicate:false};}
+   if(input.resultCode!==0){
+    await client.query('UPDATE subscription_payments SET status=\'failed\',result_code=$3,result_description=$4,callback_payload=$5::jsonb,updated_at=now() WHERE id=$1 AND agency_id=$2',[payment.id,input.agencyId,String(input.resultCode),input.resultDescription,JSON.stringify(input.payload)]);
+    await client.query('COMMIT');return {found:true,status:'failed',duplicate:false};
+   }
+   const current=await client.query("SELECT * FROM agency_subscriptions WHERE agency_id=$1 AND status IN ('active','trialing','past_due') ORDER BY created_at DESC LIMIT 1 FOR UPDATE",[payment.agency_id]);
+   let subscriptionId:string;
+   if(current.rows[0]){
+    const updated=await client.query("UPDATE agency_subscriptions SET plan_id=$2,status='active',provider='mpesa',current_period_start=GREATEST(COALESCE(current_period_end,now()),now()),current_period_end=GREATEST(COALESCE(current_period_end,now()),now())+CASE WHEN $3='year' THEN interval '1 year' ELSE interval '1 month' END,cancel_at_period_end=false,cancelled_at=NULL,updated_at=now() WHERE id=$1 RETURNING id",[current.rows[0].id,payment.plan_id,payment.billing_interval]);
+    subscriptionId=String(updated.rows[0].id);
+   }else{
+    const inserted=await client.query("INSERT INTO agency_subscriptions(id,agency_id,plan_id,status,provider,current_period_start,current_period_end) VALUES($1,$2,$3,'active','mpesa',now(),now()+CASE WHEN $4='year' THEN interval '1 year' ELSE interval '1 month' END) RETURNING id",[randomUUID(),payment.agency_id,payment.plan_id,payment.billing_interval]);
+    subscriptionId=String(inserted.rows[0].id);
+   }
+   await client.query("UPDATE subscription_payments SET status='succeeded',result_code='0',result_description=$2,callback_payload=$3::jsonb,paid_at=now(),subscription_id=$4,updated_at=now() WHERE id=$1",[payment.id,input.resultDescription,JSON.stringify(input.payload),subscriptionId]);
+   await client.query('COMMIT');return {found:true,status:'succeeded',duplicate:false};
+  }catch(error){await client.query('ROLLBACK');throw error;}finally{client.release();}
+ }
  async processCallback(input:{checkoutRequestId:string;resultCode:number;resultDescription:string;amount:number|null;receipt:string|null;payload:unknown}):Promise<{found:boolean;status:string;duplicate:boolean}>{
   if(!pool)throw new Error('PERSISTENCE_REQUIRED');
   const client=await pool.connect();
