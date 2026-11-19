@@ -49,14 +49,22 @@ export class AgencyOwnershipTransferRepository {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
+      const tokenHash = hashToken(token);
+      const locator = await client.query<{ agency_id: string }>(
+        "SELECT agency_id FROM agency_ownership_transfers WHERE token_hash=$1 AND accepted_at IS NULL AND revoked_at IS NULL",
+        [tokenHash]
+      );
+      const agencyId = locator.rows[0]?.agency_id;
+      if (!agencyId) throw new Error('TRANSFER_INVALID');
+      const agency = await client.query("SELECT id FROM agencies WHERE id=$1 AND status='active' FOR UPDATE", [agencyId]);
+      if (!agency.rows[0]) throw new Error('TRANSFER_INVALID');
       const transfer = await client.query<{ id: string; agency_id: string; initiated_by: string; target_user_id: string; expires_at: Date }>(
-        "SELECT id,agency_id,initiated_by,target_user_id,expires_at FROM agency_ownership_transfers WHERE token_hash=$1 AND accepted_at IS NULL AND revoked_at IS NULL FOR UPDATE",
-        [hashToken(token)]
+        "SELECT id,agency_id,initiated_by,target_user_id,expires_at FROM agency_ownership_transfers WHERE token_hash=$1 AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at>now() FOR UPDATE",
+        [tokenHash]
       );
       const pending = transfer.rows[0];
-      if (!pending || pending.expires_at.getTime() <= Date.now()) throw new Error('TRANSFER_INVALID');
+      if (!pending) throw new Error('TRANSFER_INVALID');
       if (pending.target_user_id !== userId) throw new Error('TRANSFER_RECIPIENT_MISMATCH');
-      await client.query("SELECT id FROM agencies WHERE id=$1 AND status='active' FOR UPDATE", [pending.agency_id]);
       const target = await client.query<{ email: string; role: AgencyRole }>(
         "SELECT u.email,m.role FROM agency_memberships m JOIN users u ON u.id=m.user_id WHERE m.agency_id=$1 AND m.user_id=$2 AND m.status='active' FOR UPDATE OF m",
         [pending.agency_id, userId]
