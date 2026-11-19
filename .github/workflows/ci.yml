@@ -38,10 +38,8 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
       - run: npm install
-      - name: Report full dependency audit findings
-        run: |
-          npm audit --json > /tmp/npm-audit.json || true
-          node -e "const a=require('/tmp/npm-audit.json'); for (const [name,v] of Object.entries(a.vulnerabilities ?? {})) console.log(JSON.stringify({name,severity:v.severity,range:v.range,via:v.via.map(x=>typeof x==='string'?x:{name:x.name,title:x.title,range:x.range,url:x.url}),fixAvailable:v.fixAvailable}))"
+      - name: Audit all dependencies
+        run: npm audit --audit-level=low
       - name: Audit production dependencies
         run: npm audit --omit=dev --audit-level=high
       - run: npm run verify
