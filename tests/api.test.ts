@@ -79,6 +79,17 @@ describe('subscription payment lifecycle',()=>{
 });
 describe('subscription billing foundation',()=>{
  it('does not expose the Daraja callback route when no callback secret is configured',async()=>{expect((await request(app).post('/api/v1/webhooks/mpesa/not-a-real-secret').send({})).status).toBe(404);});
+ it('seeds the approved KES monthly plans as inactive until quotas are approved',async()=>{
+  if(!pool)return;
+  await migrate();
+  const plans=await pool.query<{code:string;price_minor:string;billing_interval:string;is_active:boolean}>('SELECT code,price_minor,billing_interval,is_active FROM subscription_plans ORDER BY price_minor');
+  expect(plans.rows).toEqual([
+   {code:'starter',price_minor:'250000',billing_interval:'month',is_active:false},
+   {code:'professional',price_minor:'500000',billing_interval:'month',is_active:false},
+   {code:'business',price_minor:'1200000',billing_interval:'month',is_active:false}
+  ]);
+ });
+
  it('exposes active plans and the selected agency subscription summary',async()=>{
   if(!pool)return;
   const plans=await request(app).get('/api/v1/billing/plans');
