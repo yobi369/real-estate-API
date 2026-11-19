@@ -5,7 +5,9 @@
   "type": "module",
   "description": "PostgreSQL-backed real estate inventory and customer enquiry API",
   "license": "MIT",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "start": "node dist/src/server.js",
@@ -13,7 +15,8 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run --maxWorkers=1 --minWorkers=1",
     "lint": "eslint .",
-    "verify": "npm run typecheck && npm test && npm run build && npm run lint"
+    "verify": "npm run typecheck && npm test && npm run build && npm run lint",
+    "benchmark": "node scripts/benchmark.mjs"
   },
   "dependencies": {
     "cors": "^2.8.5",
