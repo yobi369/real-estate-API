@@ -42,7 +42,7 @@ The secret is part of the callback URL and must be treated as a credential. The 
 
 ## Plan activation
 
-Subscription plan rows are inactive by default. Starter (KSh 2,500/month), Professional (KSh 5,000/month), and Business (KSh 12,000/month) are seeded as inactive plans. Before checkout can be enabled, approve listing/member/API limits and the final feature matrix, enforce the limits in the API, and explicitly activate the approved rows in `subscription_plans`. Do not enable placeholder or zero-value prices.
+Subscription plan rows are inactive by default. Starter (KSh 2,500/month; 25 active listings; 3 team seats), Professional (KSh 5,000/month; 100 active listings; 10 team seats), and Business (KSh 12,000/month; 500 active listings; 30 team seats) are seeded as inactive plans. Listing limits count drafts and published listings; archived listings do not count. Team seats count active memberships plus unexpired pending invitations. The API requires an active subscription before listing creation or inviting team members and enforces the plan quotas. Monthly API request allowances remain unconfigured and API access is not included in these plans. Do not enable placeholder or zero-value prices.
 
 M-Pesa amounts are whole KES. The checkout endpoint rejects plan prices that are not whole-KES amounts.
 
