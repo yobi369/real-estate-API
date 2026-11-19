@@ -22,7 +22,7 @@ function setAuthMode(register) {
 }
 function show(view) {
   state.view=view; $$('.view').forEach(el=>el.classList.toggle('active',el.id===`view-${view}`));
-  $('.nav-item').forEach(el=>el.classList.toggle('active',el.dataset.view===view));
+  $$('.nav-item').forEach(el=>el.classList.toggle('active',el.dataset.view===view));
 }
 async function startWorkspace() {
   $('#auth-view').classList.add('hidden'); $('#create-agency-view').classList.add('hidden'); $('#workspace-view').classList.remove('hidden'); $('#sign-out').classList.remove('hidden');
@@ -98,7 +98,7 @@ $('#auth-switch').addEventListener('click',()=>setAuthMode(!state.register));
 $('#sign-out').addEventListener('click',()=>{sessionStorage.removeItem('sp_token');sessionStorage.removeItem('sp_agency');state.token='';state.agency=null;$('#workspace-view').classList.add('hidden');$('#sign-out').classList.add('hidden');$('#auth-view').classList.remove('hidden');setAuthMode(false);});
 $('#agency-form').addEventListener('submit',async event=>{event.preventDefault();const name=String(new FormData(event.currentTarget).get('name')).trim();try{await api('/api/v1/agencies',{method:'POST',body:JSON.stringify({name})});await startWorkspace();}catch(error){message('#agency-message',error.message,'error');}});
 $('#agency-select').addEventListener('change',async event=>{state.agency=state.agencies.find(a=>a.id===event.target.value)||null;state.view='overview';try{await loadWorkspace();}catch(error){message('#workspace-message',error.message,'error');}});
-$$('.nav-item').forEach(button=>button.addEventListener('click',()=>{show(button.dataset.view);if(button.dataset.view==='enquiries')loadEnquiries();if(button.dataset.view==='team')loadTeam();if(button.dataset.view==='billing')loadBilling();}));
+$$$('.nav-item').forEach(button=>button.addEventListener('click',()=>{show(button.dataset.view);if(button.dataset.view==='enquiries')loadEnquiries();if(button.dataset.view==='team')loadTeam();if(button.dataset.view==='billing')loadBilling();}));
 $$('[data-go]').forEach(button=>button.addEventListener('click',()=>show(button.dataset.go)));
 $('#show-listing-form').addEventListener('click',()=>$('#listing-form').classList.remove('hidden'));
 $('#hide-listing-form').addEventListener('click',()=>$('#listing-form').classList.add('hidden'));
