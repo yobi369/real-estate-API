@@ -35,7 +35,8 @@ export async function initiateStkPush(input:{phoneNumber:string;amountMinor:numb
  const timestamp=darajaTimestamp();
  const shortcode=config.MPESA_SHORTCODE!;
  const password=Buffer.from(shortcode+config.MPESA_PASSKEY+timestamp).toString('base64');
- const callback=config.MPESA_CALLBACK_BASE_URL!.replace(new RegExp('/++'/api/v1/webhooks/mpesa/'+config.MPESA_CALLBACK_SECRET;
+ const callbackBase=config.MPESA_CALLBACK_BASE_URL!;
+ const callback=(callbackBase.endsWith('/')?callbackBase.slice(0,-1):callbackBase)+'/api/v1/webhooks/mpesa/'+config.MPESA_CALLBACK_SECRET;
  const payload={BusinessShortCode:shortcode,Password:password,Timestamp:timestamp,TransactionType:'CustomerPayBillOnline',Amount:input.amountMinor/100,PartyA:phone,PartyB:shortcode,PhoneNumber:phone,CallBackURL:callback,AccountReference:'SP'+input.agencyId.replace(/-/g,'').slice(0,8),TransactionDesc:'Agency subscription'};
  const response=await fetch(baseUrl()+'/mpesa/stkpush/v1/processrequest',{method:'POST',headers:{Authorization:'Bearer '+await accessToken(),'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify(payload),signal:AbortSignal.timeout(15000)});
  const body=await response.json().catch(()=>({})) as {ResponseCode?:string;ResponseDescription?:string;CustomerMessage?:string;CheckoutRequestID?:string;MerchantRequestID?:string;errorMessage?:string};
