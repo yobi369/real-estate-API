@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Secure Properties agency workspace for managing property inventory, enquiries and team access.">
+  <title>Secure Properties | Agency Console</title>
+  <link rel="stylesheet" href="/console/style.css">
+  <script src="/console/app.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/console/"><span class="brand-mark">S</span><span>SECURE <b>PROPERTIES</b></span></a>
+    <div class="top-actions"><a href="/demo/">Marketplace demo</a><a href="/docs/">API docs</a><button id="sign-out" class="quiet hidden" type="button">Sign out</button></div>
+  </header>
+  <main>
+    <section id="auth-view" class="auth-wrap">
+      <div class="auth-copy">
+        <p class="eyebrow">AGENCY OPERATIONS WORKSPACE</p>
+        <h1>Your property business,<br><em>under control.</em></h1>
+        <p>Manage your listings, publish inventory, respond to enquiries and organise your agency team from one secure workspace.</p>
+        <div class="trust-line"><span>●</span> Agency-scoped access <span>●</span> Private drafts <span>●</span> Activity auditing</div>
+      </div>
+      <div class="auth-card">
+        <p class="eyebrow">WELCOME</p><h2 id="auth-title">Sign in</h2>
+        <p id="auth-help" class="muted">Access your agency workspace.</p>
+        <form id="auth-form">
+          <label>Email address<input name="email" type="email" autocomplete="email" required maxlength="254" placeholder="you@agency.co.ke"></label>
+          <label>Password<input name="password" type="password" autocomplete="current-password" required minlength="12" placeholder="At least 12 characters"></label>
+          <button id="auth-submit" class="primary" type="submit">Sign in <span>→</span></button>
+        </form>
+        <button id="auth-switch" class="text-button" type="button">New to Secure Properties? Create an account</button>
+        <p id="auth-message" class="notice" role="status"></p>
+      </div>
+    </section>
+
+    <section id="workspace-view" class="workspace hidden">
+      <aside class="sidebar">
+        <div class="agency-switch"><label for="agency-select">WORKSPACE</label><select id="agency-select"></select></div>
+        <nav aria-label="Workspace navigation">
+          <button class="nav-item active" data-view="overview">◫ <span>Overview</span></button>
+          <button class="nav-item" data-view="listings">▦ <span>Listings</span></button>
+          <button class="nav-item" data-view="enquiries">✉ <span>Enquiries</span></button>
+          <button class="nav-item" data-view="team">♙ <span>Team</span></button>
+        </nav>
+        <div class="sidebar-bottom"><span class="status-dot"></span><span>Secure workspace</span></div>
+      </aside>
+      <section class="main-panel">
+        <div id="workspace-message" class="notice" role="status"></div>
+        <section class="view active" id="view-overview">
+          <div class="page-heading"><div><p class="eyebrow">AGENCY OVERVIEW</p><h1>Good business starts with visibility.</h1><p class="muted">A live snapshot of your agency inventory and customer activity.</p></div><button class="primary" data-go="listings">Manage listings <span>→</span></button></div>
+          <div class="stat-grid">
+            <article class="stat-card"><span>Total listings</span><strong id="stat-total">—</strong><small>Across all publication states</small></article>
+            <article class="stat-card"><span>Published</span><strong id="stat-published">—</strong><small>Visible in public search</small></article>
+            <article class="stat-card"><span>Drafts</span><strong id="stat-drafts">—</strong><small>Private until published</small></article>
+            <article class="stat-card"><span>New enquiries</span><strong id="stat-enquiries">—</strong><small>In your agency inbox</small></article>
+          </div>
+          <div class="content-card"><div class="card-heading"><div><p class="eyebrow">RECENT INVENTORY</p><h2>Recently updated listings</h2></div><button class="text-button" data-go="listings">View all →</button></div><div id="recent-listings" class="table-wrap"></div></div>
+        </section>
+
+        <section class="view" id="view-listings">
+          <div class="page-heading"><div><p class="eyebrow">PROPERTY MANAGEMENT</p><h1>Your listings</h1><p class="muted">Create, review and control what the public can see.</p></div><button id="show-listing-form" class="primary">＋ Add listing</button></div>
+          <form id="listing-form" class="content-card listing-form hidden">
+            <div class="card-heading"><div><p class="eyebrow">NEW INVENTORY</p><h2>Add a property</h2></div><button type="button" id="hide-listing-form" class="quiet">Close</button></div>
+            <div class="form-grid">
+              <label class="span-2">Listing title<input name="title" required minlength="3" maxlength="120" placeholder="Three-bedroom family home"></label>
+              <label>Category<select name="category"><option value="property">Property</option><option value="airbnb">Short stay</option><option value="land">Land</option></select></label>
+              <label>Property type<select name="propertyType" required><option value="apartment">Apartment</option><option value="house">House</option><option value="land">Land</option><option value="commercial">Commercial</option></select></label>
+              <label>Purpose<select name="transactionType" required><option value="sale">For sale</option><option value="rent">For rent</option><option value="lease">For lease</option></select></label>
+              <label>Price<input name="price" type="number" min="1" max="1000000000" step="1" required placeholder="12500000"></label>
+              <label>Currency<select name="currency"><option value="KES">KES</option><option value="USD">USD</option><option value="GBP">GBP</option></select></label>
+              <label>City / town<input name="city" required maxlength="100" placeholder="Nairobi"></label>
+              <label>Location / neighbourhood<input name="location" maxlength="150" placeholder="Kilimani"></label>
+              <label>Bedrooms<input name="bedrooms" type="number" min="0" max="100" value="0"></label>
+              <label>Bathrooms<input name="bathrooms" type="number" min="0" max="100" value="0"></label>
+              <label class="span-2">Description<textarea name="description" required minlength="1" maxlength="5000" rows="3" placeholder="Describe the property accurately..."></textarea></label>
+            </div>
+            <p class="muted small">New listings are saved as private drafts. An owner or admin must publish them.</p>
+            <button class="primary" type="submit">Save as draft <span>→</span></button>
+            <p id="listing-message" class="notice" role="status"></p>
+          </form>
+          <div class="content-card"><div class="card-heading"><div><p class="eyebrow">INVENTORY</p><h2>All agency listings</h2></div><div class="filter-row"><input id="listing-search" placeholder="Search listings..." aria-label="Search listings"><select id="listing-status" aria-label="Filter by status"><option value="">All statuses</option><option value="draft">Drafts</option><option value="published">Published</option><option value="archived">Archived</option></select></div></div><div id="listing-list" class="listing-grid"></div></div>
+        </section>
+
+        <section class="view" id="view-enquiries">
+          <div class="page-heading"><div><p class="eyebrow">CUSTOMER RELATIONSHIPS</p><h1>Enquiry inbox</h1><p class="muted">Customer requests routed to this agency.</p></div><button id="refresh-enquiries" class="quiet">↻ Refresh</button></div>
+          <div class="content-card"><div id="enquiry-list" class="enquiry-list"></div></div>
+        </section>
+
+        <section class="view" id="view-team">
+          <div class="page-heading"><div><p class="eyebrow">ACCESS MANAGEMENT</p><h1>Your team</h1><p class="muted">Manage agency membership and invite colleagues.</p></div></div>
+          <div class="content-card" id="invite-card"><div class="card-heading"><div><p class="eyebrow">INVITE A COLLEAGUE</p><h2>Grow your team</h2></div></div>
+            <form id="invite-form" class="invite-form"><label>Email address<input name="email" type="email" required placeholder="colleague@agency.co.ke"></label><label>Role<select name="role"><option value="agent">Agent</option><option value="viewer">Viewer</option><option value="admin">Admin</option></select></label><button class="primary" type="submit">Create invitation</button></form>
+            <p class="muted small">Invitations currently use secure manual delivery. The one-time token will be shown after creation; send it only to the invited person through a trusted channel.</p><div id="invite-result" class="notice"></div>
+          </div>
+          <div class="content-card"><div class="card-heading"><div><p class="eyebrow">AGENCY MEMBERS</p><h2>People with access</h2></div><button id="refresh-team" class="quiet">↻ Refresh</button></div><div id="team-list" class="table-wrap"></div></div>
+        </section>
+      </section>
+    </section>
+
+    <section id="create-agency-view" class="auth-wrap hidden">
+      <div class="auth-copy"><p class="eyebrow">ONE MORE STEP</p><h1>Create your<br><em>agency workspace.</em></h1><p>Your listings, enquiries and team access will be isolated to this agency.</p></div>
+      <div class="auth-card"><p class="eyebrow">NEW WORKSPACE</p><h2>Agency details</h2><form id="agency-form"><label>Agency name<input name="name" required minlength="2" maxlength="160" placeholder="Coastal Realty Kenya"></label><button class="primary" type="submit">Create workspace <span>→</span></button></form><p id="agency-message" class="notice" role="status"></p></div>
+    </section>
+  </main>
+  <footer><span>Secure Properties · Agency Console</span><span>Built for property professionals in Kenya</span></footer>
+</body>
+</html>
