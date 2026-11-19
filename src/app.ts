@@ -12,6 +12,7 @@ import { PropertyRepository, type StoredProperty } from './repositories/property
 import { InquiryRepository } from './repositories/inquiry-repository.js';
 import { AgencyRepository } from './repositories/agency-repository.js';
 import { AgencyInvitationRepository, type InvitationRole } from './repositories/agency-invitation-repository.js';
+import { AgencyOwnershipTransferRepository } from './repositories/agency-ownership-transfer-repository.js';
 import { z } from 'zod';
 import { demoProperties } from './demo-data.js';
 import { pool } from './db.js';
@@ -25,8 +26,10 @@ export const propertyRepository=new PropertyRepository();
 export const inquiryRepository=new InquiryRepository();
 export const agencyRepository=new AgencyRepository();
 export const agencyInvitationRepository=new AgencyInvitationRepository();
+export const agencyOwnershipTransferRepository=new AgencyOwnershipTransferRepository();
 const invitationCreateSchema=z.object({email:z.string().trim().email().max(254).transform(v=>v.toLowerCase()),role:z.enum(['admin','agent','viewer'])}).strict();
 const invitationAcceptSchema=z.object({token:z.string().min(32).max(128)}).strict();
+const ownershipTransferCreateSchema=z.object({targetUserId:z.string().uuid()}).strict();
 const agencyCreateSchema=z.object({name:z.string().trim().min(2).max(160)}).strict();
 const resolveActiveAgency=async(req:express.Request,res:express.Response):Promise<{id:string;role:'owner'|'admin'|'agent'|'viewer'}|null>=>{
  const agencyId=req.header('x-agency-id');
@@ -78,6 +81,8 @@ const spec={
   '/api/v1/agencies/invitations':{post:{tags:['Agencies'],summary:'Create an email-bound agency invitation (owner/admin only)',security:[{bearerAuth:[]}],parameters:[{name:'X-Agency-ID',in:'header',required:true,schema:{type:'string',format:'uuid'}}],requestBody:{required:true,content:{'application/json':{schema:{type:'object',additionalProperties:false,required:['email','role'],properties:{email:{type:'string',format:'email'},role:{type:'string',enum:['admin','agent','viewer']}}}}}},responses:{'201':{description:'Invitation created; token is returned once for trusted delivery'},'403':{description:'Agency owner/admin permission required'},'409':{description:'Pending invitation already exists'},'503':{description:'PostgreSQL required'}}}},
   '/api/v1/agencies/invitations/accept':{post:{tags:['Agencies'],summary:'Accept an invitation using the authenticated matching email account',security:[{bearerAuth:[]}],requestBody:{required:true,content:{'application/json':{schema:{type:'object',additionalProperties:false,required:['token'],properties:{token:{type:'string'}}}}}},responses:{'200':{description:'Agency membership activated'},'400':{description:'Invalid, expired, revoked, or used invitation'},'403':{description:'Invitation email does not match authenticated account'}}}},
   '/api/v1/agencies/invitations/{id}':{delete:{tags:['Agencies'],summary:'Revoke a pending invitation (owner/admin only)',security:[{bearerAuth:[]}],parameters:[{name:'id',in:'path',required:true,schema:{type:'string',format:'uuid'}},{name:'X-Agency-ID',in:'header',required:true,schema:{type:'string',format:'uuid'}}],responses:{'204':{description:'Invitation revoked'},'403':{description:'Agency owner/admin permission required'},'404':{description:'Pending invitation not found'}}}},
+  '/api/v1/agencies/ownership-transfer':{post:{tags:['Agencies'],summary:'Initiate a two-step ownership transfer to an active agency admin (current owner only)',security:[{bearerAuth:[]}],parameters:[{name:'X-Agency-ID',in:'header',required:true,schema:{type:'string',format:'uuid'}}],requestBody:{required:true,content:{'application/json':{schema:{type:'object',additionalProperties:false,required:['targetUserId'],properties:{targetUserId:{type:'string',format:'uuid'}}}}}},responses:{'201':{description:'Transfer request created; hashed token returned once for trusted delivery'},'403':{description:'Current agency owner permission required'},'409':{description:'Target must be an active agency admin'}}}},
+  '/api/v1/agencies/ownership-transfer/accept':{post:{tags:['Agencies'],summary:'Accept an ownership transfer as the invited active agency admin',security:[{bearerAuth:[]}],requestBody:{required:true,content:{'application/json':{schema:{type:'object',additionalProperties:false,required:['token'],properties:{token:{type:'string',minLength:32,maxLength:128}}}}}},responses:{'200':{description:'Ownership transferred; previous owner becomes admin'},'400':{description:'Transfer invalid, expired, or superseded'},'403':{description:'Only the designated recipient can accept'}}}},
   '/api/v1/properties':{get:{tags:['Properties'],summary:'Search public property listings',parameters:[{name:'page',in:'query',schema:{type:'integer',minimum:1}},{name:'limit',in:'query',schema:{type:'integer',minimum:1,maximum:100}},{name:'city',in:'query',schema:{type:'string'}},{name:'category',in:'query',schema:{type:'string',enum:['property','airbnb','land']}},{name:'propertyType',in:'query',schema:{type:'string',enum:['apartment','house','land','commercial']}},{name:'transactionType',in:'query',schema:{type:'string',enum:['sale','rent','lease']}},{name:'minPrice',in:'query',schema:{type:'number'}},{name:'maxPrice',in:'query',schema:{type:'number'}},{name:'search',in:'query',schema:{type:'string'}}],responses:{'200':{description:'Paginated live listings'},'400':{description:'Invalid query'}}},post:{tags:['Properties'],summary:'Create a draft property, short-stay or land listing within an active agency',security:[{bearerAuth:[]}],parameters:[{name:'X-Agency-ID',in:'header',required:true,schema:{type:'string',format:'uuid'}}],requestBody:{required:true,content:{'application/json':{schema:{$ref:'#/components/schemas/PropertyInput'}}}},responses:{'201':{description:'Listing created'},'401':{description:'Authentication required'},'403':{description:'Administrator permission required'}}}},
   '/api/v1/properties/{id}/publication':{patch:{tags:['Properties'],summary:'Publish, unpublish or archive a listing (agency owner/admin only)',security:[{bearerAuth:[]}],parameters:[{name:'id',in:'path',required:true,schema:{type:'string',format:'uuid'}},{name:'X-Agency-ID',in:'header',required:true,schema:{type:'string',format:'uuid'}}],requestBody:{required:true,content:{'application/json':{schema:{type:'object',additionalProperties:false,required:['status'],properties:{status:{type:'string',enum:['draft','published','archived']}}}}}},responses:{'200':{description:'Publication state updated and audited'},'403':{description:'Agency owner/admin permission required'},'404':{description:'Listing not found in this agency'},'503':{description:'PostgreSQL required'}}}},
   '/api/v1/properties/{id}':{parameters:[{name:'id',in:'path',required:true,schema:{type:'string',format:'uuid'}}],get:{tags:['Properties'],summary:'Retrieve one listing',responses:{'200':{description:'Listing found'},'404':{description:'Not found'}}},patch:{tags:['Properties'],summary:'Update a listing within the selected agency',security:[{bearerAuth:[]}],parameters:[{name:'X-Agency-ID',in:'header',required:true,schema:{type:'string',format:'uuid'}}],responses:{'200':{description:'Updated'},'403':{description:'Forbidden'}}},delete:{tags:['Properties'],summary:'Delete a listing within the selected agency',security:[{bearerAuth:[]}],parameters:[{name:'X-Agency-ID',in:'header',required:true,schema:{type:'string',format:'uuid'}}],responses:{'204':{description:'Deleted'},'403':{description:'Forbidden'}}}},
@@ -192,6 +197,35 @@ app.post('/api/v1/agencies/invitations/accept',authenticate,async(req,res)=>{
   if(error instanceof Error&&error.message==='INVITATION_EMAIL_MISMATCH')return res.status(403).json({error:{code:'INVITATION_EMAIL_MISMATCH',message:'Sign in with the email address this invitation was sent to'}});
   if(error instanceof Error&&error.message==='INVITATION_INVALID')return res.status(400).json({error:{code:'INVITATION_INVALID',message:'Invitation is invalid, expired, revoked, or already accepted'}});
   if(error instanceof Error&&error.message==='MEMBERSHIP_ALREADY_ACTIVE')return res.status(409).json({error:{code:'MEMBERSHIP_ALREADY_ACTIVE',message:'You already have an active membership in this agency'}});
+  throw error;
+ }
+});
+app.post('/api/v1/agencies/ownership-transfer',authenticate,async(req,res)=>{
+ const agency=await resolveActiveAgency(req,res);if(!agency)return;
+ if(agency.role!=='owner')return res.status(403).json({error:{code:'OWNER_REQUIRED',message:'Only the current agency owner can initiate an ownership transfer'}});
+ const parsed=ownershipTransferCreateSchema.safeParse(req.body);
+ if(!parsed.success)return res.status(400).json({error:{code:'VALIDATION_ERROR',message:'A valid active admin userId is required'}});
+ try{
+  const transfer=await agencyOwnershipTransferRepository.create(agency.id,req.principal!.id,parsed.data.targetUserId);
+  return res.status(201).json({data:{id:transfer.id,expiresAt:transfer.expiresAt,token:transfer.token,delivery:'manual'}});
+ }catch(error){
+  if(error instanceof Error&&error.message==='PERSISTENCE_REQUIRED')return res.status(503).json({error:{code:'PERSISTENCE_REQUIRED',message:'Ownership transfer requires PostgreSQL persistence'}});
+  if(error instanceof Error&&error.message==='ACTOR_NOT_OWNER')return res.status(403).json({error:{code:'OWNER_REQUIRED',message:'Only the current agency owner can initiate an ownership transfer'}});
+  if(error instanceof Error&&error.message==='TARGET_NOT_ACTIVE_ADMIN')return res.status(409).json({error:{code:'TARGET_NOT_ACTIVE_ADMIN',message:'The recipient must be an active admin in this agency'}});
+  if(error instanceof Error&&error.message==='TRANSFER_TO_SELF')return res.status(400).json({error:{code:'TRANSFER_TO_SELF',message:'Ownership cannot be transferred to the current owner'}});
+  throw error;
+ }
+});
+app.post('/api/v1/agencies/ownership-transfer/accept',authenticate,async(req,res)=>{
+ const parsed=invitationAcceptSchema.safeParse(req.body);
+ if(!parsed.success)return res.status(400).json({error:{code:'VALIDATION_ERROR',message:'A valid ownership transfer token is required'}});
+ try{
+  const result=await agencyOwnershipTransferRepository.accept(parsed.data.token,req.principal!.id,req.principal!.email);
+  return res.status(200).json({data:result});
+ }catch(error){
+  if(error instanceof Error&&error.message==='PERSISTENCE_REQUIRED')return res.status(503).json({error:{code:'PERSISTENCE_REQUIRED',message:'Ownership transfer requires PostgreSQL persistence'}});
+  if(error instanceof Error&&['TRANSFER_INVALID','TRANSFER_OWNER_CHANGED','TRANSFER_TARGET_NO_LONGER_ADMIN'].includes(error.message))return res.status(400).json({error:{code:'TRANSFER_INVALID',message:'Ownership transfer is invalid, expired, or no longer eligible'}});
+  if(error instanceof Error&&error.message==='TRANSFER_RECIPIENT_MISMATCH')return res.status(403).json({error:{code:'TRANSFER_RECIPIENT_MISMATCH',message:'Only the designated recipient account can accept this transfer'}});
   throw error;
  }
 });
