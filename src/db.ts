@@ -1,21 +1,28 @@
 import pg from 'pg';
 import { config } from './config.js';
 const { Pool } = pg;
-export const pool = config.DATABASE_URL ? new Pool({
-  connectionString: config.DATABASE_URL,
+const poolOptions = (connectionString: string) => ({
+  connectionString,
   ...(config.NODE_ENV === 'production' ? { ssl: { rejectUnauthorized: true } } : {}),
   max: 10,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 5000
-}) : null;
+});
 
-export async function migrate(): Promise<void> {
-  if (!pool) {
+export const pool = config.DATABASE_URL ? new Pool(poolOptions(config.DATABASE_URL)) : null;
+// Migrations may use a separate owner-level credential. The runtime pool remains
+// bound to DATABASE_URL and is never used by server startup for schema changes.
+export const migrationPool = config.MIGRATION_DATABASE_URL
+  ? new Pool(poolOptions(config.MIGRATION_DATABASE_URL))
+  : pool;
+
+export async function migrate(targetPool: pg.Pool | null = migrationPool): Promise<void> {
+  if (!targetPool) {
     if (config.NODE_ENV === 'production') throw new Error('DATABASE_URL is required in production');
     return;
   }
 
-  const client = await pool.connect();
+  const client = await targetPool.connect();
   try {
     await client.query('BEGIN');
     await client.query('SELECT pg_advisory_xact_lock(2026111501)');
