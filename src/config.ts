@@ -13,7 +13,7 @@ const schema=z.object({
  MPESA_ENV:z.enum(['sandbox','production']).default('sandbox'),
  MPESA_CONSUMER_KEY:z.string().min(1).optional(),
  MPESA_CONSUMER_SECRET:z.string().min(1).optional(),
- MPESA_SHORTCODE:z.string().regex(/^\\d{5,7}$/).optional(),
+ MPESA_SHORTCODE:z.string().regex(/^\d{5,7}$/).optional(),
  MPESA_PASSKEY:z.string().min(1).optional(),
  MPESA_CALLBACK_BASE_URL:z.string().url().optional(),
  MPESA_CALLBACK_SECRET:z.string().min(32).optional()
