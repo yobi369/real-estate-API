@@ -28,7 +28,7 @@ No existing user role is rewritten, no property or enquiry is deleted, and no bi
 
 ## Audit and invitation boundaries
 
-The current audit trail covers agency creation (including bootstrap) and property publication transitions. Property create/update/delete, invitation lifecycle, and membership administration are not yet covered by audit events. Invitation tables are present, but invitation create/accept/revoke endpoints are not implemented. Do not represent those capabilities as complete.
+The current audit trail covers agency creation (including bootstrap), property create/update/delete, and publication transitions. Listing audit events are committed or rolled back with their corresponding listing mutations. Invitation lifecycle and membership administration are not yet covered by audit events. Invitation tables are present, but invitation create/accept/revoke endpoints are not implemented. Do not represent those capabilities as complete.
 
 ## Deployment and rollback
 
