@@ -22,7 +22,7 @@ function setAuthMode(register) {
 }
 function show(view) {
   state.view=view; $$('.view').forEach(el=>el.classList.toggle('active',el.id===`view-${view}`));
-  $$$('.nav-item').forEach(el=>el.classList.toggle('active',el.dataset.view===view));
+  $('.nav-item').forEach(el=>el.classList.toggle('active',el.dataset.view===view));
 }
 async function startWorkspace() {
   $('#auth-view').classList.add('hidden'); $('#create-agency-view').classList.add('hidden'); $('#workspace-view').classList.remove('hidden'); $('#sign-out').classList.remove('hidden');
