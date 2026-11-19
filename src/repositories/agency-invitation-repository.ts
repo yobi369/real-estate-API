@@ -49,10 +49,24 @@ export class AgencyInvitationRepository {
       const invitation = result.rows[0];
       if (!invitation) throw new Error('INVITATION_INVALID');
       if (invitation.email.trim().toLowerCase() !== userEmail.trim().toLowerCase()) throw new Error('INVITATION_EMAIL_MISMATCH');
-      await client.query(
-        "INSERT INTO agency_memberships(id,agency_id,user_id,role,status) VALUES($1,$2,$3,$4,'active') ON CONFLICT(agency_id,user_id) DO UPDATE SET role=EXCLUDED.role,status='active',updated_at=now()",
-        [randomUUID(), invitation.agency_id, userId, invitation.role]
+      const existingMembership = await client.query<{ role: string; status: string }>(
+        'SELECT role,status FROM agency_memberships WHERE agency_id=$1 AND user_id=$2 FOR UPDATE',
+        [invitation.agency_id, userId]
       );
+      if (existingMembership.rows[0]?.role === 'owner' || existingMembership.rows[0]?.status === 'active') {
+        throw new Error('MEMBERSHIP_ALREADY_ACTIVE');
+      }
+      if (existingMembership.rows[0]) {
+        await client.query(
+          "UPDATE agency_memberships SET role=$1,status='active',updated_at=now() WHERE agency_id=$2 AND user_id=$3",
+          [invitation.role, invitation.agency_id, userId]
+        );
+      } else {
+        await client.query(
+          "INSERT INTO agency_memberships(id,agency_id,user_id,role,status) VALUES($1,$2,$3,$4,'active')",
+          [randomUUID(), invitation.agency_id, userId, invitation.role]
+        );
+      }
       await client.query("UPDATE agency_invitations SET accepted_at=now() WHERE id=$1", [invitation.id]);
       await client.query(
         "INSERT INTO audit_events(id,agency_id,actor_user_id,action,entity_type,entity_id,metadata) VALUES($1,$2,$3,'agency.invitation.accepted','agency_invitation',$4,$5::jsonb)",
