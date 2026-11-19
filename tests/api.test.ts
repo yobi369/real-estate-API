@@ -79,7 +79,7 @@ describe('subscription payment lifecycle',()=>{
 });
 describe('subscription billing foundation',()=>{
  it('does not expose the Daraja callback route when no callback secret is configured',async()=>{expect((await request(app).post('/api/v1/webhooks/mpesa/not-a-real-secret').send({})).status).toBe(404);});
- it('seeds the approved KES monthly plans as inactive until quotas are approved',async()=>{
+ it('seeds the approved KES monthly plans as inactive until payment acceptance',async()=>{
   if(!pool)return;
   await migrate();
   const plans=await pool.query<{code:string;price_minor:string;billing_interval:string;is_active:boolean}>("SELECT code,price_minor,billing_interval,max_listings,max_members,is_active FROM subscription_plans WHERE code IN ('starter','professional','business') ORDER BY price_minor");
