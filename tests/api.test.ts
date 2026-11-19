@@ -30,9 +30,9 @@ describe('subscription payment lifecycle',()=>{
   const agency=createdAgency.body.data.id as string;
   const payments=new SubscriptionPaymentRepository();
   const plan=await payments.getActivePlan('test-monthly');expect(plan).not.toBeNull();
-  const attempt=await payments.createAttempt(agency,plan!,'billing-idempotency-key-0001','254712345678');
+  const attempt=await payments.createAttempt(agency,plan!,'254712345678','billing-idempotency-key-0001');
   expect(attempt.created).toBe(true);
-  await expect(payments.createAttempt(agency,plan!,'billing-idempotency-key-0002','254712345678')).rejects.toThrow('PAYMENT_ALREADY_PENDING');
+  await expect(payments.createAttempt(agency,plan!,'254712345678','billing-idempotency-key-0002')).rejects.toThrow('PAYMENT_ALREADY_PENDING');
   const checkout='checkout-'+randomUUID();
   const pending=await payments.attachCheckout(attempt.payment.id,'merchant-'+randomUUID(),checkout);
   expect(pending.status).toBe('pending');
@@ -50,7 +50,7 @@ describe('subscription payment lifecycle',()=>{
   expect(current.body.data.subscription.cancelAtPeriodEnd).toBe(true);
   const otherOwner=await register('billing-payment-owner2@example.com');
   const otherAgency=await request(app).post('/api/v1/agencies').set('Authorization','Bearer '+otherOwner).send({name:'Second Billing Agency'});
-  const otherAttempt=await payments.createAttempt(otherAgency.body.data.id,plan!,'billing-idempotency-key-0003','254712345678');
+  const otherAttempt=await payments.createAttempt(otherAgency.body.data.id,plan!,'254712345678','billing-idempotency-key-0003');
   const otherCheckout='checkout-'+randomUUID();
   await payments.attachCheckout(otherAttempt.payment.id,'merchant-'+randomUUID(),otherCheckout);
   const rejected=await payments.processCallback({checkoutRequestId:otherCheckout,resultCode:0,resultDescription:'Success',amount:2499,receipt:'R'+randomUUID().replaceAll('-','').slice(0,10),payload:{Body:{stkCallback:{ResultCode:0}}}});
@@ -59,7 +59,7 @@ describe('subscription payment lifecycle',()=>{
   expect(noSubscription.rows).toHaveLength(0);
   const thirdOwner=await register('billing-query-owner@example.com');
   const thirdAgency=await request(app).post('/api/v1/agencies').set('Authorization','Bearer '+thirdOwner).send({name:'Query Reconciliation Agency'});
-  const thirdAttempt=await payments.createAttempt(thirdAgency.body.data.id,plan!,'billing-idempotency-key-0004','254712345678');
+  const thirdAttempt=await payments.createAttempt(thirdAgency.body.data.id,plan!,'254712345678','billing-idempotency-key-0004');
   const thirdCheckout='checkout-'+randomUUID();
   await payments.attachCheckout(thirdAttempt.payment.id,'merchant-'+randomUUID(),thirdCheckout);
   const stillPending=await payments.processQuery({agencyId:thirdAgency.body.data.id,paymentId:thirdAttempt.payment.id,resultCode:null,resultDescription:'Still processing',payload:{ResultCode:null}});
