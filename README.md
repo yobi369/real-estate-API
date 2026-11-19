@@ -56,7 +56,7 @@ See [the integration pilot proposal](docs/COMMERCIAL-PILOT-PROPOSAL.md) for the 
 - `POST /api/v1/billing/payments/{paymentId}/reconcile` performs an owner/admin-triggered STK status query when a callback is delayed or missing; confirmed status is applied idempotently.
 - `POST /api/v1/billing/subscription/cancel` schedules cancellation at the end of the current paid period.
 - Configure all `MPESA_*` settings together in the secret store. Callback URLs must be public HTTPS origins. The current STK adapter is PayBill-only. Till/Buy Goods collection needs a separately verified Daraja API flow.
-- Starter (KSh 2,500/month), Professional (KSh 5,000/month), and Business (KSh 12,000/month) are seeded as inactive plans. Listing/member/API quotas still need commercial approval and enforcement before activation. No Daraja credentials are configured in this repository, so sandbox/production end-to-end payment verification is still outstanding.
+- Starter (KSh 2,500/month: 25 active listings, 3 team seats), Professional (KSh 5,000/month: 100 active listings, 10 team seats), and Business (KSh 12,000/month: 500 active listings, 30 team seats) are seeded as inactive plans. The API enforces listing and team-seat limits for subscribed agencies; listing counts include drafts and published listings but exclude archived listings, while team seats include active memberships and pending invitations. API request quotas and paid API access are not included. No Daraja credentials are configured in this repository, so sandbox/production end-to-end payment verification is still outstanding.
 
 ## Production deployment
 
