@@ -55,4 +55,69 @@ export class AgencyRepository {
     );
     return result.rows.map(row=>({id:row.id,name:row.name,slug:row.slug,status:row.status,role:row.role,createdAt:row.created_at.toISOString()}));
   }
+
+  async listMembers(agencyId:string):Promise<Array<{userId:string;email:string;role:AgencyRole;status:'active'|'invited'|'suspended';createdAt:string}>>{
+    if(!pool)throw new Error('PERSISTENCE_REQUIRED');
+    const result=await pool.query<{user_id:string;email:string;role:AgencyRole;status:'active'|'invited'|'suspended';created_at:Date}>(
+      `SELECT m.user_id,u.email,m.role,m.status,m.created_at
+       FROM agency_memberships m JOIN users u ON u.id=m.user_id
+       WHERE m.agency_id=$1
+       ORDER BY CASE m.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 WHEN 'agent' THEN 2 ELSE 3 END,m.created_at ASC,u.email ASC`,
+      [agencyId]
+    );
+    return result.rows.map(row=>({userId:row.user_id,email:row.email,role:row.role,status:row.status,createdAt:row.created_at.toISOString()}));
+  }
+
+  async updateMemberRole(agencyId:string,userId:string,role:Exclude<AgencyRole,'owner'>,actorId:string):Promise<{userId:string;role:AgencyRole}|null>{
+    if(!pool)throw new Error('PERSISTENCE_REQUIRED');
+    const client=await pool.connect();
+    try{
+      await client.query('BEGIN');
+      await client.query('SELECT id FROM agencies WHERE id=$1 FOR UPDATE',[agencyId]);
+      const target=await client.query<{role:AgencyRole;status:string}>(
+        'SELECT role,status FROM agency_memberships WHERE agency_id=$1 AND user_id=$2 FOR UPDATE',[agencyId,userId]
+      );
+      const current=target.rows[0];
+      if(!current||current.status!=='active'){await client.query('ROLLBACK');return null;}
+      if(current.role==='owner')throw new Error('OWNER_ROLE_IMMUTABLE');
+      const changed=await client.query<{user_id:string;role:AgencyRole}>(
+        "UPDATE agency_memberships SET role=$1,updated_at=now() WHERE agency_id=$2 AND user_id=$3 AND status='active' RETURNING user_id,role",
+        [role,agencyId,userId]
+      );
+      await client.query(
+        "INSERT INTO audit_events(id,agency_id,actor_user_id,action,entity_type,entity_id,metadata) VALUES($1,$2,$3,'agency.member.role_updated','agency_membership',$4,$5::jsonb)",
+        [randomUUID(),agencyId,actorId,userId,JSON.stringify({previousRole:current.role,newRole:role})]
+      );
+      await client.query('COMMIT');
+      return {userId:changed.rows[0]!.user_id,role:changed.rows[0]!.role};
+    }catch(error){await client.query('ROLLBACK');throw error;}
+    finally{client.release();}
+  }
+
+  async removeMember(agencyId:string,userId:string,actorId:string):Promise<boolean>{
+    if(!pool)throw new Error('PERSISTENCE_REQUIRED');
+    const client=await pool.connect();
+    try{
+      await client.query('BEGIN');
+      await client.query('SELECT id FROM agencies WHERE id=$1 FOR UPDATE',[agencyId]);
+      const target=await client.query<{role:AgencyRole;status:string}>(
+        'SELECT role,status FROM agency_memberships WHERE agency_id=$1 AND user_id=$2 FOR UPDATE',[agencyId,userId]
+      );
+      const current=target.rows[0];
+      if(!current||current.status!=='active'){await client.query('ROLLBACK');return false;}
+      if(current.role==='owner')throw new Error('LAST_OWNER_PROTECTED');
+      await client.query(
+        "UPDATE agency_memberships SET status='suspended',updated_at=now() WHERE agency_id=$1 AND user_id=$2",
+        [agencyId,userId]
+      );
+      await client.query(
+        "INSERT INTO audit_events(id,agency_id,actor_user_id,action,entity_type,entity_id,metadata) VALUES($1,$2,$3,'agency.member.removed','agency_membership',$4,$5::jsonb)",
+        [randomUUID(),agencyId,actorId,userId,JSON.stringify({previousRole:current.role})]
+      );
+      await client.query('COMMIT');
+      return true;
+    }catch(error){await client.query('ROLLBACK');throw error;}
+    finally{client.release();}
+  }
+
 }
