@@ -45,3 +45,16 @@ export async function initiateStkPush(input:{phoneNumber:string;amountMinor:numb
  if(!response.ok||body.ResponseCode!=='0'||!body.CheckoutRequestID||!body.MerchantRequestID)throw new Error('MPESA_STK_REJECTED: '+String(body.errorMessage??body.ResponseDescription??'Daraja did not accept the STK request').slice(0,250));
  return {merchantRequestId:body.MerchantRequestID,checkoutRequestId:body.CheckoutRequestID,customerMessage:String(body.CustomerMessage??'Payment prompt sent to your phone')};
 }
+export type StkQueryResult={responseCode:string|null;resultCode:number|null;resultDescription:string;};
+export async function queryStkPush(checkoutRequestId:string):Promise<StkQueryResult>{
+ if(!isMpesaConfigured())throw new Error('MPESA_NOT_CONFIGURED');
+ const timestamp=darajaTimestamp();
+ const shortcode=config.MPESA_SHORTCODE!;
+ const password=Buffer.from(shortcode+config.MPESA_PASSKEY+timestamp).toString('base64');
+ const payload={BusinessShortCode:shortcode,Password:password,Timestamp:timestamp,CheckoutRequestID:checkoutRequestId};
+ const response=await fetch(baseUrl()+'/mpesa/stkpushquery/v1/query',{method:'POST',headers:{Authorization:'Bearer '+await accessToken(),'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify(payload),signal:AbortSignal.timeout(15000)});
+ const body=await response.json().catch(()=>({})) as {ResponseCode?:string;ResultCode?:string|number;ResultDesc?:string;ResponseDescription?:string};
+ if(!response.ok||body.ResponseCode!=='0')throw new Error('MPESA_QUERY_FAILED');
+ const resultCode=body.ResultCode===undefined||body.ResultCode===null?null:Number(body.ResultCode);
+ return {responseCode:String(body.ResponseCode),resultCode:Number.isFinite(resultCode as number)?resultCode:null,resultDescription:String(body.ResultDesc??body.ResponseDescription??'Payment is still being processed')};
+}
