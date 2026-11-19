@@ -3,7 +3,7 @@
 | Date | Evidence | Status |
 |---|---|---|
 | 2026-10-26 | PostgreSQL schema and repository, account registration/login, scrypt password hashing, signed expiring bearer tokens, owner/admin authorization, and strict registration validation | Verified: GitHub Actions run [40277234665](https://github.com/yobi369/real-estate-API/actions/runs/40277234665) passed `npm run verify` on Node 22 and Node 24 with PostgreSQL 16 |
-| 2026-11-19 | Multi-agency onboarding and access isolation, published-listing enquiry routing, process-local authentication/search rate limits, safe oversized-body handling, security regression tests, and HTTP benchmark runner | Verified: push run [44471748506](https://github.com/yobi369/real-estate-API/actions/runs/44471748506) and PR run [44471757096](https://github.com/yobi369/real-estate-API/actions/runs/44471757096) both passed on Node 22 and Node 24 with PostgreSQL 16; 5 test files and 37 tests passed. Production dependency audit reported 0 vulnerabilities. |
+| 2026-11-19 | Multi-agency onboarding and access isolation, published-listing enquiry routing, process-local authentication/search rate limits, safe oversized-body handling, transactional listing CRUD/publication audit events, security regression tests, and HTTP benchmark runner | Verified: push run [44472200607](https://github.com/yobi369/real-estate-API/actions/runs/44472200607) and PR run [44472208119](https://github.com/yobi369/real-estate-API/actions/runs/44472208119) both passed on Node 22 and Node 24 with PostgreSQL 16; 5 test files and 38 tests passed. Production dependency audit reported 0 vulnerabilities. |
 
 ## Remaining quality gates
 
