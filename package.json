@@ -13,7 +13,7 @@
     "start": "node dist/src/server.js",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "vitest run --maxWorkers=1 --minWorkers=1",
+    "test": "vitest run --no-file-parallelism",
     "lint": "eslint .",
     "verify": "npm run typecheck && npm test && npm run build && npm run lint",
     "benchmark": "node scripts/benchmark.mjs"
