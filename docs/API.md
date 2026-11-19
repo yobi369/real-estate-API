@@ -36,3 +36,13 @@ Production requires PostgreSQL, a unique `JWT_SECRET`, and a `CORS_ORIGIN` allow
 ## Performance testing
 
 Use `npm run benchmark` against a running local or staging API. Configure `API_BASE_URL`, `BENCHMARK_PATH`, `BENCHMARK_REQUESTS`, and `BENCHMARK_CONCURRENCY`; optional error-rate and p95 thresholds are documented in [BENCHMARKING.md](BENCHMARKING.md). Benchmark output is environment-specific and is not a production capacity guarantee.
+
+
+## Agency invitations
+All invitation routes require a bearer token and an `X-Agency-ID` header where an agency context is required.
+
+- `POST /api/v1/agencies/invitations` — agency owner/admin creates an invitation using `{"email":"agent@example.com","role":"agent"}`. Allowed roles are `admin`, `agent`, and `viewer`; owner cannot be granted by invitation. The response contains the opaque token once. Deliver it through a trusted channel; automated email delivery is not configured.
+- `POST /api/v1/agencies/invitations/accept` — an authenticated user accepts using `{"token":"..."}`. The signed-in account email must match the invitation email. Tokens are stored as SHA-256 hashes, expire after seven days, and cannot be reused after acceptance or revocation.
+- `DELETE /api/v1/agencies/invitations/{id}` — agency owner/admin revokes a pending invitation.
+
+Invitation creation, acceptance, and revocation write audit events in the same transaction as the state change. An existing active membership cannot be overwritten by accepting an invitation.
