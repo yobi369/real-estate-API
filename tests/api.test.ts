@@ -29,6 +29,8 @@ describe('subscription billing foundation',()=>{
   expect(current.status).toBe(200);
   expect(current.body.data.subscription).toBeNull();
   expect(current.body.data.payments).toEqual([]);
+  const checkout=await request(app).post('/api/v1/billing/mpesa/stk-push').set('Authorization','Bearer '+owner).set('X-Agency-ID',agency).set('Idempotency-Key','test-idempotency-key-0001').send({planCode:'starter',phoneNumber:'0712345678'});
+  expect(checkout.status).toBe(503);
  });
 });
 describe('agency private inventory',()=>{
