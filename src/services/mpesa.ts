@@ -39,7 +39,7 @@ export async function initiateStkPush(input:{phoneNumber:string;amountMinor:numb
  const callbackBase=config.MPESA_CALLBACK_BASE_URL!;
  const callback=(callbackBase.endsWith('/')?callbackBase.slice(0,-1):callbackBase)+'/api/v1/webhooks/mpesa/'+config.MPESA_CALLBACK_SECRET;
  const accountReference='SP'+input.agencyId.replaceAll('-','').slice(0,8);
- const payload={BusinessShortCode:shortcode,Password:password,Timestamp:timestamp,TransactionType:config.MPESA_TRANSACTION_TYPE,Amount:input.amountMinor/100,PartyA:phone,PartyB:shortcode,PhoneNumber:phone,CallBackURL:callback,AccountReference:accountReference,TransactionDesc:'Agency subscription'};
+ const payload={BusinessShortCode:shortcode,Password:password,Timestamp:timestamp,TransactionType:'CustomerPayBillOnline',Amount:input.amountMinor/100,PartyA:phone,PartyB:shortcode,PhoneNumber:phone,CallBackURL:callback,AccountReference:accountReference,TransactionDesc:'Agency subscription'};
  const response=await fetch(baseUrl()+'/mpesa/stkpush/v1/processrequest',{method:'POST',headers:{Authorization:'Bearer '+await accessToken(),'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify(payload),signal:AbortSignal.timeout(15000)});
  const body=await response.json().catch(()=>({})) as {ResponseCode?:string;ResponseDescription?:string;CustomerMessage?:string;CheckoutRequestID?:string;MerchantRequestID?:string;errorMessage?:string};
  if(!response.ok||body.ResponseCode!=='0'||!body.CheckoutRequestID||!body.MerchantRequestID)throw new Error('MPESA_STK_REJECTED: '+String(body.errorMessage??body.ResponseDescription??'Daraja did not accept the STK request').slice(0,250));
