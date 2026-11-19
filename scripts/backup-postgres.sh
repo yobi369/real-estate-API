@@ -13,7 +13,7 @@ done
 mkdir -p "$BACKUP_DIR"
 chmod 700 "$BACKUP_DIR"
 
-timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
+timestamp="$(date -u +%Y%m%dT%H%M%SZ)-$"
 output="$BACKUP_DIR/real-estate-api-$timestamp.dump.age"
 temporary="$(mktemp "$BACKUP_DIR/.real-estate-api-$timestamp.XXXXXX")"
 trap 'rm -f "$temporary"' EXIT
@@ -24,8 +24,15 @@ pg_dump --format=custom --no-owner --no-acl --dbname="$DATABASE_URL" \
   | age --encrypt --recipient "$AGE_RECIPIENT" > "$temporary"
 
 test -s "$temporary" || { echo "Backup output is empty" >&2; exit 1; }
+if [[ -e "$output" || -e "$output.sha256" ]]; then
+  echo "Refusing to overwrite an existing backup: $output" >&2
+  exit 1
+fi
 mv "$temporary" "$output"
-sha256sum "$output" > "$output.sha256"
+(
+  cd "$BACKUP_DIR"
+  sha256sum "$(basename "$output")" > "$(basename "$output").sha256"
+)
 chmod 600 "$output" "$output.sha256"
 
 echo "Encrypted backup created: $output"
