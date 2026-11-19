@@ -205,6 +205,7 @@ app.delete('/api/v1/agencies/invitations/:id',authenticate,async(req,res)=>{
   return revoked?res.status(204).end():res.status(404).json({error:{code:'INVITATION_NOT_FOUND',message:'Pending invitation was not found in this agency'}});
  }catch(error){
   if(error instanceof Error&&error.message==='PERSISTENCE_REQUIRED')return res.status(503).json({error:{code:'PERSISTENCE_REQUIRED',message:'Agency invitations require PostgreSQL persistence'}});
+  if(error instanceof Error&&error.message==='ACTOR_NOT_AUTHORIZED')return res.status(403).json({error:{code:'FORBIDDEN',message:'Your agency membership does not permit this operation'}});
   throw error;
  }
 });
