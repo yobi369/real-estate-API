@@ -275,8 +275,10 @@ app.post('/api/v1/billing/mpesa/stk-push',billingCheckoutRateLimit,authenticate,
    const payment=await subscriptionPaymentRepository.attachCheckout(attempt.payment.id,accepted.merchantRequestId,accepted.checkoutRequestId);
    return res.status(202).json({data:{paymentId:payment.id,status:payment.status,checkoutRequestId:payment.checkoutRequestId,customerMessage:accepted.customerMessage}});
   }catch(error){
-   const reason=error instanceof Error?error.message:'M-Pesa request failed';await subscriptionPaymentRepository.markFailed(attempt.payment.id,'STK_REQUEST_FAILED',reason);
-   return res.status(502).json({error:{code:'MPESA_REQUEST_FAILED',message:'Safaricom did not accept the payment request. No subscription has been activated.'}});
+   const reason=error instanceof Error?error.message:'M-Pesa request failed';
+   if(reason==='MPESA_OUTCOME_UNKNOWN')return res.status(503).json({error:{code:'MPESA_OUTCOME_UNKNOWN',message:'Safaricom response was not conclusive. This attempt is held to prevent a duplicate charge; do not start another checkout. Contact support for reconciliation.'}});
+   await subscriptionPaymentRepository.markFailed(attempt.payment.id,'STK_REQUEST_FAILED',reason);
+   return res.status(502).json({error:{code:'MPESA_REQUEST_FAILED',message:'Safaricom rejected the payment request. No subscription has been activated.'}});
   }
  }catch(error){
   if(error instanceof Error&&error.message==='ACTIVE_SUBSCRIPTION')return res.status(409).json({error:{code:'ACTIVE_SUBSCRIPTION',message:'This agency already has an active subscription for the current period'}});
