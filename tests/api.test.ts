@@ -90,6 +90,27 @@ describe('subscription billing foundation',()=>{
   ]);
  });
 
+ it('enforces Starter listing and team-seat limits for an active agency subscription',async()=>{
+  if(!pool)return;
+  const owner=await bootstrap('starter-quota-owner@example.com');
+  const agency=await agencyId(owner);
+  const plan=await pool.query<{id:string}>("UPDATE subscription_plans SET is_active=true WHERE code='starter' RETURNING id");
+  expect(plan.rows).toHaveLength(1);
+  await pool.query("INSERT INTO agency_subscriptions(id,agency_id,plan_id,status,provider,current_period_start,current_period_end) VALUES($1,$2,$3,'active','manual',now(),now()+interval '30 days')",[randomUUID(),agency,plan.rows[0]!.id]);
+  for(let i=0;i<25;i++){
+   const created=await request(app).post('/api/v1/properties').set('Authorization','Bearer '+owner).set('X-Agency-ID',agency).send({...sample,title:'Starter listing '+i});
+   expect(created.status).toBe(201);
+  }
+  const overLimit=await request(app).post('/api/v1/properties').set('Authorization','Bearer '+owner).set('X-Agency-ID',agency).send({...sample,title:'Starter listing over limit'});
+  expect(overLimit.status).toBe(409);
+  const first=await request(app).post('/api/v1/agencies/invitations').set('Authorization','Bearer '+owner).set('X-Agency-ID',agency).send({email:'starter-seat-2@example.com',role:'agent'});
+  const second=await request(app).post('/api/v1/agencies/invitations').set('Authorization','Bearer '+owner).set('X-Agency-ID',agency).send({email:'starter-seat-3@example.com',role:'viewer'});
+  const third=await request(app).post('/api/v1/agencies/invitations').set('Authorization','Bearer '+owner).set('X-Agency-ID',agency).send({email:'starter-seat-4@example.com',role:'agent'});
+  expect(first.status).toBe(201);
+  expect(second.status).toBe(201);
+  expect(third.status).toBe(409);
+  expect(third.body.error.code).toBe('TEAM_LIMIT_REACHED');
+ });
  it('exposes active plans and the selected agency subscription summary',async()=>{
   if(!pool)return;
   const plans=await request(app).get('/api/v1/billing/plans');
