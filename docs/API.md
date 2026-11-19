@@ -1,6 +1,6 @@
 # API contract
 
-Base path: `/api/v1`. Public listing reads and customer enquiry submissions are available without an account. Listing publication requires an administrator bearer token. The enquiry inbox is restricted to admin users.
+Base path: `/api/v1`. Public listing reads and customer enquiry submissions are available without an account. Agency-scoped listing writes and publication require an authenticated active agency membership and `X-Agency-ID`; publication is restricted to agency owners/admins. The enquiry inbox is restricted to the selected agency's owner/admin.
 
 ## Register and login
 - `POST /api/v1/auth/register` with `{"email":"seller@example.com","password":"StrongPassword123"}`. Passwords require at least 12 characters with lowercase, uppercase, and a number.
@@ -12,11 +12,11 @@ Base path: `/api/v1`. Public listing reads and customer enquiry submissions are 
 Supported categories are `property`, `airbnb`, and `land`. Category is distinct from property type: a short-stay apartment uses category `airbnb`, property type `apartment`, transaction type `rent`, and price type `night`.
 
 ## Create and manage listings
-`POST /api/v1/properties` with an administrator bearer token and JSON. Ordinary registered users receive 403:
+`POST /api/v1/properties` with a bearer token, `X-Agency-ID`, and JSON. Agency owners, admins, and agents may create listings; viewers and non-members receive 403:
 ```json
 {"title":"Coastal family home","description":"Bright home near amenities.","category":"property","price":12500000,"priceType":"total","currency":"KES","propertyType":"house","transactionType":"sale","bedrooms":3,"bathrooms":2,"city":"Mombasa","location":"Nyali","address":"Nyali, Mombasa, Kenya","country":"Kenya","areaSqm":180,"sizeAcres":0,"featured":false,"imageUrls":[]}
 ```
-Owner identity is derived from the verified token. `GET /api/v1/properties/{id}` reads a listing. `PATCH` and `DELETE` require the owner or an admin.
+Owner identity and agency scope are derived from the verified token and selected active membership. `GET /api/v1/properties/{id}` reads a published listing. `PATCH` and `DELETE` require an active agency membership; agents may change their own listings, while agency owners/admins may manage all agency listings. New listings start as drafts and are not publicly visible until published.
 
 ## Customer enquiries
 `POST /api/v1/inquiries` stores contact messages, property viewing requests, short-stay booking requests, and land site-visit requests. It accepts requestType (`general`, `booking`, `viewing`, or `site_visit`), name, email, phone, message, and optional service/listing/date/guest/pickup details. A success response is returned only after the repository has stored the enquiry.
