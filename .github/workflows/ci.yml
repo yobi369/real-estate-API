@@ -4,7 +4,7 @@ concurrency:
   cancel-in-progress: true
 on:
   push:
-    branches: [main, 'upgrade/**', 'sales/**', 'integration/**', 'feature/**']
+    branches: [main, 'upgrade/**', 'sales/**', 'integration/**', 'feature/**', 'ops/**']
   pull_request:
     branches: [main, 'sales/**']
   workflow_dispatch:
@@ -42,4 +42,6 @@ jobs:
         run: npm audit --audit-level=low
       - name: Audit production dependencies
         run: npm audit --omit=dev --audit-level=high
+      - name: Validate PostgreSQL operations scripts
+        run: bash -n scripts/backup-postgres.sh scripts/restore-postgres.sh
       - run: npm run verify
