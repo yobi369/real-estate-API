@@ -11,7 +11,8 @@ This checklist separates implemented controls from external or incomplete releas
 - [x] Agency onboarding, active membership context resolution, agency-scoped listing writes and private inventory reads, publication lifecycle, scoped enquiry inbox, and owner/admin membership administration with cross-agency isolation and owner protection.
 - [x] Authenticated agency console for inventory, enquiries, and team operations.
 - [x] Subscription-plan catalog, agency subscription state, and payment ledger schema with owner/admin-only billing summary APIs.
-- [x] Daraja STK Push adapter, PayBill/Till transaction modes, idempotency controls, callback-path secret, callback amount/receipt matching, and transactional subscription activation. Sandbox credentials and an end-to-end provider test are still outstanding.
+- [x] Daraja STK Push adapter (PayBill), idempotency controls, callback-path secret, callback amount/receipt matching, status-query reconciliation, transactional subscription activation, and end-of-period cancellation. Sandbox credentials and an end-to-end provider test are still outstanding.
+- [ ] Verify callback delivery, missing-callback reconciliation, duplicate callbacks, user cancellation, timeouts, and amount mismatch against the Safaricom sandbox; confirm production PayBill onboarding and credentials.
 - [x] Public reads restricted to published listings; public responses omit owner and agency identifiers.
 - [x] Input validation, Helmet, configured CORS, request IDs, redacted sensitive headers, and bounded JSON body parsing.
 - [x] Process-local rate limits for bootstrap, registration, login, public search/demo, and enquiries; limits are not distributed.
