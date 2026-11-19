@@ -193,3 +193,72 @@ describe('agency membership administration',()=>{
     expect((await request(app).get('/api/v1/agencies/members').set('Authorization',`Bearer ${first}`).set('X-Agency-ID',secondCreated.body.data.id)).status).toBe(403);
   });
 });
+
+
+describe('agency ownership transfer',()=>{
+  async function addAdmin(owner:string,agency:string,email:string){
+    const recipient=await register(email);
+    const invitation=await request(app).post('/api/v1/agencies/invitations')
+      .set('Authorization',`Bearer ${owner}`).set('X-Agency-ID',agency)
+      .send({email,role:'admin'});
+    expect(invitation.status).toBe(201);
+    const accepted=await request(app).post('/api/v1/agencies/invitations/accept')
+      .set('Authorization',`Bearer ${recipient}`).send({token:invitation.body.data.token});
+    expect(accepted.status).toBe(200);
+    return recipient;
+  }
+
+  it('requires an active agency admin and recipient acceptance, then atomically transfers and audits ownership',async()=>{
+    if(!pool)return;
+    const owner=await bootstrap('transfer-owner@example.com');
+    const agency=await agencyId(owner);
+    const admin=await addAdmin(owner,agency,'transfer-admin@example.com');
+    const adminUserId=(await pool.query<{id:string}>('SELECT id FROM users WHERE email=$1',['transfer-admin@example.com'])).rows[0]!.id;
+
+    const created=await request(app).post('/api/v1/agencies/ownership-transfer')
+      .set('Authorization',`Bearer ${owner}`).set('X-Agency-ID',agency)
+      .send({targetUserId:adminUserId});
+    expect(created.status).toBe(201);
+    expect(created.body.data.token).toBeTruthy();
+
+    const unrelated=await register('transfer-unrelated@example.com');
+    expect((await request(app).post('/api/v1/agencies/ownership-transfer/accept')
+      .set('Authorization',`Bearer ${unrelated}`).send({token:created.body.data.token})).status).toBe(403);
+
+    const accepted=await request(app).post('/api/v1/agencies/ownership-transfer/accept')
+      .set('Authorization',`Bearer ${admin}`).send({token:created.body.data.token});
+    expect(accepted.status).toBe(200);
+    expect(accepted.body.data).toEqual({agencyId:agency,previousOwnerId:(await pool.query<{id:string}>('SELECT id FROM users WHERE email=$1',['transfer-owner@example.com'])).rows[0]!.id,newOwnerId:adminUserId});
+
+    const roles=await pool.query<{email:string;role:string}>(`SELECT u.email,m.role FROM agency_memberships m JOIN users u ON u.id=m.user_id WHERE m.agency_id=$1 AND m.status='active' ORDER BY u.email`,[agency]);
+    expect(roles.rows).toEqual([
+      {email:'transfer-admin@example.com',role:'owner'},
+      {email:'transfer-owner@example.com',role:'admin'}
+    ]);
+    const audit=await pool.query<{action:string;actor_user_id:string}>(`SELECT action,actor_user_id FROM audit_events WHERE entity_type='agency_ownership_transfer' AND entity_id=$1 ORDER BY action`,[created.body.data.id]);
+    expect(audit.rows.map(row=>row.action)).toEqual(['agency.ownership_transfer.accepted','agency.ownership_transfer.created']);
+    expect(audit.rows.find(row=>row.action==='agency.ownership_transfer.accepted')!.actor_user_id).toBe(adminUserId);
+    expect((await request(app).post('/api/v1/agencies/ownership-transfer/accept')
+      .set('Authorization',`Bearer ${admin}`).send({token:created.body.data.token})).status).toBe(400);
+  });
+
+  it('rejects non-owner initiation, self-transfer, and non-admin recipients',async()=>{
+    if(!pool)return;
+    const owner=await bootstrap('transfer-owner-two@example.com');
+    const agency=await agencyId(owner);
+    const agent=await register('transfer-agent@example.com');
+    const agentInvitation=await request(app).post('/api/v1/agencies/invitations')
+      .set('Authorization',`Bearer ${owner}`).set('X-Agency-ID',agency)
+      .send({email:'transfer-agent@example.com',role:'agent'});
+    await request(app).post('/api/v1/agencies/invitations/accept')
+      .set('Authorization',`Bearer ${agent}`).send({token:agentInvitation.body.data.token});
+    const agentId=(await pool.query<{id:string}>('SELECT id FROM users WHERE email=$1',['transfer-agent@example.com'])).rows[0]!.id;
+    expect((await request(app).post('/api/v1/agencies/ownership-transfer')
+      .set('Authorization',`Bearer ${agent}`).set('X-Agency-ID',agency).send({targetUserId:agentId})).status).toBe(403);
+    const ownerId=(await pool.query<{id:string}>('SELECT id FROM users WHERE email=$1',['transfer-owner-two@example.com'])).rows[0]!.id;
+    expect((await request(app).post('/api/v1/agencies/ownership-transfer')
+      .set('Authorization',`Bearer ${owner}`).set('X-Agency-ID',agency).send({targetUserId:ownerId})).status).toBe(400);
+    expect((await request(app).post('/api/v1/agencies/ownership-transfer')
+      .set('Authorization',`Bearer ${owner}`).set('X-Agency-ID',agency).send({targetUserId:agentId})).status).toBe(409);
+  });
+});
