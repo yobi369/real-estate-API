@@ -1,20 +1,27 @@
 # Security model and production gates
 
-## Implemented
-- Helmet security headers, bounded JSON body (1 MiB), strict Zod input validation, configurable CORS, request IDs, and redacted authorization, cookie and bootstrap-token logs.
-- Registration enforces a 12-character password plus upper/lowercase and numeric characters; passwords are salted and derived with Node.js scrypt, never stored in plaintext.
-- HMAC-SHA256 signed bearer tokens have bounded expiry and signature verification using timing-safe comparison.
-- Only administrators can publish listings. Listing update/delete requires ownership or admin privileges. Public registration cannot assign roles; the first administrator is created through a one-time secret-protected bootstrap endpoint.
+## Implemented controls
+
+- Helmet security headers, disabled Express fingerprint, configured CORS, strict Zod validation, 1 MiB JSON body limit, request IDs, and redacted authorization/cookie/bootstrap-token logs.
+- Registration enforces a 12-character password with uppercase, lowercase, and numeric characters. Passwords are salted and derived with Node.js scrypt.
+- HMAC-SHA256 bearer tokens have bounded expiry and signature verification uses timing-safe comparison.
+- First-admin bootstrap is secret-protected and one-time; production requires PostgreSQL and a non-default JWT secret.
+- Authenticated agency operations resolve the selected agency against active membership. Property and enquiry repository operations are tenant-scoped; public listing reads expose published listings only.
+- Publication transitions and agency creation/bootstrap write audit events transactionally.
 - Parameterized PostgreSQL queries, foreign keys, constraints, and indexes.
+- Process-local rate limits: bootstrap 5 requests/15 minutes per IP; registration 10/15 minutes; login 10/15 minutes; public property/demo search 120/minute; enquiries 10/15 minutes. Authentication/search/enquiry limits are per process and are not a distributed abuse-control system.
+- HTTP benchmark runner is available through `npm run benchmark`; performance claims require recorded staging evidence.
 
-- Public enquiry submissions are rate-limited to 10 per client IP per 15 minutes per process. This is a single-instance safeguard; use a shared limiter or edge/WAF control before scaling horizontally.
+## Known gaps before public launch
 
-## Still required before public launch
-- Configure production PostgreSQL, TLS/SSL connectivity, least-privilege DB user, backup and restore drills.
-- Add rate limiting for authentication and public search, account lockout/abuse controls, password reset and email verification, token revocation/rotation strategy, audit events, monitoring, alerting, and request timeouts.
-- Create the first admin using a temporary bootstrap secret, then remove the secret from the host. Review authorization and data access policy.
-- Complete dependency/secret scans, penetration test, load test, privacy/retention review, and deployment-specific smoke tests.
-- JWT secret must be unique, random, and managed in a secret store. Never commit production secrets.
+- Replace process-local rate limits with a shared store or enforce equivalent edge/WAF controls before horizontal scaling. Review proxy trust configuration for the actual hosting topology.
+- Add email verification, secure password reset, account lockout/abuse workflows, and token revocation/rotation/session lifecycle.
+- Extend audit coverage to property create/update/delete, membership changes, invitations, and administrative actions.
+- Implement invitation create/accept/revoke workflows with single-use token verification and expiry enforcement.
+- Configure production PostgreSQL TLS, least-privilege database role, backups, retention, and restore drills.
+- Complete dependency/secret/static-analysis review, independent authorization review, penetration testing, and representative load testing.
+- Add monitoring, alerting, request timeouts, incident ownership, privacy/retention review, and deployment-specific smoke tests.
 
 ## Honest readiness
-Production startup fails without `DATABASE_URL` and a non-default `JWT_SECRET`. Without a database URL, development uses an ephemeral adapter and readiness returns 503; this mode is for local development/tests only.
+
+The code and CI are not a substitute for production infrastructure and independent security assurance. Production startup fails without `DATABASE_URL` and a unique `JWT_SECRET`. Without PostgreSQL, readiness returns 503 and the in-memory adapter is for development/tests only. Do not load customer or personal data until the applicable release checklist is signed off.
