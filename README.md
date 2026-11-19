@@ -7,6 +7,7 @@ A documented TypeScript/Express REST API for property discovery and listing mana
 After deployment, visit:
 
 - `/demo/` — interactive property search showcase (fictional sample records only).
+- `/console/` — authenticated agency workspace for private inventory, publication controls, enquiries and team access.
 - `/docs/` — Swagger UI.
 - `/openapi.json` — OpenAPI document.
 - `/health/live` — process liveness.
@@ -30,10 +31,11 @@ The demo inventory is isolated from customer listings. It is not a live marketpl
 cp .env.example .env
 # Configure DATABASE_URL and replace JWT_SECRET with a random secret
 npm install
+npm run db:migrate
 npm run dev
 ```
 
-The application initializes the database schema at startup. For production, PostgreSQL and a unique JWT secret are mandatory. Set a temporary `ADMIN_BOOTSTRAP_TOKEN` (at least 32 characters) to create the first agency administrator through `POST /api/v1/admin/bootstrap`, then remove the token from the environment. Only administrators can publish listings. Without a database, readiness returns 503 and only the ephemeral development adapter is available.
+The API does not run schema DDL at startup. Run `npm run db:migrate` explicitly before starting the application. For production, provide a least-privilege `DATABASE_URL`, a separate privileged `MIGRATION_DATABASE_URL` to the one-off migration job, and a unique JWT secret. Set a temporary `ADMIN_BOOTSTRAP_TOKEN` (at least 32 characters) to create the first agency administrator through `POST /api/v1/admin/bootstrap`, then remove the token from the environment. Only administrators can publish listings. Without a database, readiness returns 503 and only the ephemeral development adapter is available.
 
 ## Verify
 
@@ -47,7 +49,7 @@ See [the integration pilot proposal](docs/COMMERCIAL-PILOT-PROPOSAL.md) for the 
 
 ## Production deployment
 
-See [the production-readiness checklist](docs/PRODUCTION-READINESS.md) before using customer or personal data. The public demo is not a production customer environment.
+See [the production-readiness checklist](docs/PRODUCTION-READINESS.md) before using customer or personal data. The public demo is not a production customer environment. The agency console is a product workflow foundation; billing, automated invitation email, and production customer onboarding remain separate release gates.
 
 ## Technical documentation
 
