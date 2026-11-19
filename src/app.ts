@@ -14,6 +14,8 @@ import { AgencyRepository } from './repositories/agency-repository.js';
 import { AgencyInvitationRepository, type InvitationRole } from './repositories/agency-invitation-repository.js';
 import { AgencyOwnershipTransferRepository } from './repositories/agency-ownership-transfer-repository.js';
 import { SubscriptionRepository } from './repositories/subscription-repository.js';
+import { SubscriptionPaymentRepository } from './repositories/subscription-payment-repository.js';
+import { initiateStkPush,isMpesaConfigured,normalizeKenyanPhone } from './services/mpesa.js';
 import { z } from 'zod';
 import { demoProperties } from './demo-data.js';
 import { pool } from './db.js';
@@ -29,10 +31,12 @@ export const agencyRepository=new AgencyRepository();
 export const agencyInvitationRepository=new AgencyInvitationRepository();
 export const agencyOwnershipTransferRepository=new AgencyOwnershipTransferRepository();
 export const subscriptionRepository=new SubscriptionRepository();
+export const subscriptionPaymentRepository=new SubscriptionPaymentRepository();
 const invitationCreateSchema=z.object({email:z.string().trim().email().max(254).transform(v=>v.toLowerCase()),role:z.enum(['admin','agent','viewer'])}).strict();
 const invitationAcceptSchema=z.object({token:z.string().min(32).max(128)}).strict();
 const ownershipTransferCreateSchema=z.object({targetUserId:z.string().uuid()}).strict();
 const agencyCreateSchema=z.object({name:z.string().trim().min(2).max(160)}).strict();
+const stkPushSchema=z.object({planCode:z.string().trim().min(2).max(60),phoneNumber:z.string().trim().min(8).max(20)}).strict();
 const resolveActiveAgency=async(req:express.Request,res:express.Response):Promise<{id:string;role:'owner'|'admin'|'agent'|'viewer'}|null>=>{
  const agencyId=req.header('x-agency-id');
  if(!agencyId||!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(agencyId)){
@@ -66,7 +70,7 @@ const inquiryRateLimit:express.RequestHandler=(req,res,next)=>{
 app.disable('x-powered-by');app.set('trust proxy',1);app.use(helmet());
 app.use(cors({origin:config.CORS_ORIGIN.split(',').map(v=>v.trim()),credentials:false}));
 app.use(express.json({limit:'1mb',strict:true}));
-app.use(pinoHttp({level:config.LOG_LEVEL,genReqId:(req,res)=>{const h=req.headers['x-request-id'];const id=typeof h==='string'&&/^[a-zA-Z0-9._-]{1,100}$/.test(h)?h:randomUUID();res.setHeader('x-request-id',id);return id;},redact:['req.headers.authorization','req.headers.cookie','req.headers.x-bootstrap-token']}));
+app.use(pinoHttp({level:config.LOG_LEVEL,genReqId:(req,res)=>{const h=req.headers['x-request-id'];const id=typeof h==='string'&&/^[a-zA-Z0-9._-]{1,100}$/.test(h)?h:randomUUID();res.setHeader('x-request-id',id);return id;},redact:['req.headers.authorization','req.headers.cookie','req.headers.x-bootstrap-token','req.url']}));
 const spec={
  openapi:'3.1.0',info:{title:'Real Estate API',version:'1.3.0',description:'Property, short-stay and land inventory with authenticated listing management and persisted customer enquiries.'},servers:[{url:'/'}],
  tags:[{name:'Properties',description:'Search and manage property listings.'},{name:'Inquiries',description:'Receive and review customer enquiries.'},{name:'Agencies',description:'Create and discover agency workspaces.'},{name:'Authentication',description:'Register and authenticate listing operators.'},{name:'Health',description:'Service health and readiness.'},{name:'Billing',description:'Agency subscription plans and payment history.'}],
@@ -77,6 +81,8 @@ const spec={
   '/api/v1/auth/register':{post:{tags:['Authentication'],summary:'Register a listing operator',requestBody:{required:true,content:{'application/json':{schema:{type:'object',required:['email','password'],properties:{email:{type:'string',format:'email'},password:{type:'string',minLength:12}}}}}},responses:{'201':{description:'Account created'},'400':{description:'Invalid registration input'},'409':{description:'Email already registered'}}}},
   '/api/v1/auth/login':{post:{tags:['Authentication'],summary:'Authenticate a listing operator',requestBody:{required:true,content:{'application/json':{schema:{type:'object',required:['email','password'],properties:{email:{type:'string',format:'email'},password:{type:'string'}}}}}},responses:{'200':{description:'Authenticated'},'401':{description:'Invalid credentials'}}}},
   '/api/v1/agencies':{post:{tags:['Agencies'],summary:'Create an agency workspace and become its owner',security:[{bearerAuth:[]}],requestBody:{required:true,content:{'application/json':{schema:{type:'object',additionalProperties:false,required:['name'],properties:{name:{type:'string',minLength:2,maxLength:160}}}}}},responses:{'201':{description:'Agency created'},'400':{description:'Invalid agency name'},'401':{description:'Authentication required'},'503':{description:'Persistent storage required'}}}},
+  '/api/v1/billing/mpesa/stk-push':{post:{tags:['Billing'],summary:'Start an idempotent M-Pesa subscription checkout',security:[{bearerAuth:[]}],parameters:[{name:'X-Agency-ID',in:'header',required:true,schema:{type:'string',format:'uuid'}},{name:'Idempotency-Key',in:'header',required:true,schema:{type:'string',minLength:16,maxLength:128}}],responses:{'202':{description:'STK prompt accepted; payment remains pending'},'403':{description:'Agency owner or admin permission required'},'503':{description:'Daraja is not configured'}}}},
+  '/api/v1/webhooks/mpesa/{secret}':{post:{tags:['Billing'],summary:'Receive Daraja STK callback using the configured unguessable callback path',parameters:[{name:'secret',in:'path',required:true,schema:{type:'string'}}],responses:{'200':{description:'Callback accepted'},'404':{description:'Callback route not found'}}}},
   '/api/v1/billing/plans':{get:{tags:['Billing'],summary:'List active agency subscription plans',responses:{'200':{description:'Available plans'},'503':{description:'Billing persistence unavailable'}}}},
   '/api/v1/billing/subscription':{get:{tags:['Billing'],summary:'Get the selected agency subscription and payment history',security:[{bearerAuth:[]}],parameters:[{name:'X-Agency-ID',in:'header',required:true,schema:{type:'string',format:'uuid'}}],responses:{'200':{description:'Subscription and recent payment history'},'401':{description:'Authentication required'},'403':{description:'Agency owner or admin permission required'}}}},
   '/api/v1/agencies/properties':{get:{tags:['Agencies'],summary:'List all listings, including drafts and archived records, in the selected agency',security:[{bearerAuth:[]}],parameters:[{name:'X-Agency-ID',in:'header',required:true,schema:{type:'string',format:'uuid'}},{name:'page',in:'query',schema:{type:'integer',minimum:1}},{name:'limit',in:'query',schema:{type:'integer',minimum:1,maximum:100}}],responses:{'200':{description:'Agency-scoped private inventory'},'401':{description:'Authentication required'},'403':{description:'Agency membership required'}}}},
@@ -248,6 +254,43 @@ app.delete('/api/v1/agencies/invitations/:id',authenticate,async(req,res)=>{
   if(error instanceof Error&&error.message==='ACTOR_NOT_AUTHORIZED')return res.status(403).json({error:{code:'FORBIDDEN',message:'Your agency membership does not permit this operation'}});
   throw error;
  }
+});
+app.post('/api/v1/billing/mpesa/stk-push',authenticate,async(req,res)=>{
+ const agency=await resolveActiveAgency(req,res);if(!agency)return;
+ if(!['owner','admin'].includes(agency.role))return res.status(403).json({error:{code:'FORBIDDEN',message:'Agency owner or admin permission is required to manage billing'}});
+ if(!isMpesaConfigured())return res.status(503).json({error:{code:'MPESA_NOT_CONFIGURED',message:'M-Pesa checkout is not configured for this environment'}});
+ const parsed=stkPushSchema.safeParse(req.body);if(!parsed.success)return res.status(400).json({error:{code:'VALIDATION_ERROR',message:'Checkout payload is invalid',details:parsed.error.flatten()}});
+ const idempotencyKey=(req.header('idempotency-key')??'').trim();if(idempotencyKey.length<16||idempotencyKey.length>128)return res.status(400).json({error:{code:'IDEMPOTENCY_KEY_REQUIRED',message:'Provide an Idempotency-Key between 16 and 128 characters'}});
+ let phone:string;try{phone=normalizeKenyanPhone(parsed.data.phoneNumber);}catch{return res.status(400).json({error:{code:'INVALID_MPESA_PHONE',message:'Enter a valid Kenyan mobile number'}});}
+ try{
+  const plan=await subscriptionPaymentRepository.getActivePlan(parsed.data.planCode);if(!plan)return res.status(404).json({error:{code:'PLAN_NOT_FOUND',message:'The selected subscription plan is not available'}});
+  if(plan.priceMinor%100!==0)return res.status(409).json({error:{code:'PLAN_PRICE_NOT_SUPPORTED',message:'M-Pesa checkout requires a whole-KES plan price'}});
+  const attempt=await subscriptionPaymentRepository.createAttempt(agency.id,plan,phone,idempotencyKey);
+  if(!attempt.created){if(attempt.payment.status==='pending'||attempt.payment.status==='succeeded')return res.status(200).json({data:{paymentId:attempt.payment.id,status:attempt.payment.status,checkoutRequestId:attempt.payment.checkoutRequestId}});return res.status(409).json({error:{code:'PAYMENT_ALREADY_PROCESSING',message:'This idempotency key already has a checkout attempt'}});}
+  try{
+   const accepted=await initiateStkPush({phoneNumber:phone,amountMinor:plan.priceMinor,agencyId:agency.id});
+   const payment=await subscriptionPaymentRepository.attachCheckout(attempt.payment.id,accepted.merchantRequestId,accepted.checkoutRequestId);
+   return res.status(202).json({data:{paymentId:payment.id,status:payment.status,checkoutRequestId:payment.checkoutRequestId,customerMessage:accepted.customerMessage}});
+  }catch(error){
+   const reason=error instanceof Error?error.message:'M-Pesa request failed';await subscriptionPaymentRepository.markFailed(attempt.payment.id,'STK_REQUEST_FAILED',reason);
+   return res.status(502).json({error:{code:'MPESA_REQUEST_FAILED',message:'Safaricom did not accept the payment request. No subscription has been activated.'}});
+  }
+ }catch(error){
+  if(error instanceof Error&&error.message==='ACTIVE_SUBSCRIPTION')return res.status(409).json({error:{code:'ACTIVE_SUBSCRIPTION',message:'This agency already has an active subscription for the current period'}});
+  if(error instanceof Error&&error.message==='PAYMENT_ALREADY_PENDING')return res.status(409).json({error:{code:'PAYMENT_ALREADY_PENDING',message:'An M-Pesa checkout is already pending for this agency'}});
+  throw error;
+ }
+});
+app.post('/api/v1/webhooks/mpesa/:secret',async(req,res)=>{
+ if(!config.MPESA_CALLBACK_SECRET||req.params.secret!==config.MPESA_CALLBACK_SECRET)return res.status(404).json({error:{code:'NOT_FOUND',message:'Callback route was not found'}});
+ const body=req.body as {Body?:{stkCallback?:{CheckoutRequestID?:unknown;ResultCode?:unknown;ResultDesc?:unknown;CallbackMetadata?:{Item?:Array<{Name?:unknown;Value?:unknown}>}}}};
+ const callback=body?.Body?.stkCallback;
+ if(!callback||typeof callback.CheckoutRequestID!=='string'||!Number.isFinite(Number(callback.ResultCode)))return res.status(400).json({error:{code:'INVALID_MPESA_CALLBACK',message:'Callback payload is invalid'}});
+ const items=Array.isArray(callback.CallbackMetadata?.Item)?callback.CallbackMetadata.Item:[];
+ const amountValue=items.find(item=>item.Name==='Amount')?.Value;
+ const receiptValue=items.find(item=>item.Name==='MpesaReceiptNumber')?.Value;
+ const result=await subscriptionPaymentRepository.processCallback({checkoutRequestId:callback.CheckoutRequestID,resultCode:Number(callback.ResultCode),resultDescription:String(callback.ResultDesc??''),amount:amountValue===undefined?null:Number(amountValue),receipt:receiptValue===undefined?null:String(receiptValue),payload:req.body});
+ return res.status(200).json({ResultCode:0,ResultDesc:result.found?'Callback accepted':'No matching payment'});
 });
 app.get('/api/v1/billing/plans',async(_req,res)=>{
  try{return res.json({data:{items:await subscriptionRepository.listActivePlans()}});}
