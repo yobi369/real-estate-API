@@ -4,7 +4,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import { createRequire } from 'node:module';
 import swaggerUi from 'swagger-ui-express';
-import { randomUUID } from 'node:crypto';
+import { randomUUID,timingSafeEqual } from 'node:crypto';
 import { config } from './config.js';
 import { propertyInputSchema,propertyQuerySchema } from './domain/property.js';
 import { inquiryInputSchema } from './domain/inquiry.js';
@@ -287,7 +287,9 @@ app.post('/api/v1/billing/mpesa/stk-push',billingCheckoutRateLimit,authenticate,
  }
 });
 app.post('/api/v1/webhooks/mpesa/:secret',async(req,res)=>{
- if(!config.MPESA_CALLBACK_SECRET||req.params.secret!==config.MPESA_CALLBACK_SECRET)return res.status(404).json({error:{code:'NOT_FOUND',message:'Callback route was not found'}});
+ const expectedCallbackSecret=config.MPESA_CALLBACK_SECRET??'';const suppliedCallbackSecret=String(req.params.secret??'');
+ const expectedBytes=Buffer.from(expectedCallbackSecret);const suppliedBytes=Buffer.from(suppliedCallbackSecret);
+ if(!expectedCallbackSecret||expectedBytes.length!==suppliedBytes.length||!timingSafeEqual(expectedBytes,suppliedBytes))return res.status(404).json({error:{code:'NOT_FOUND',message:'Callback route was not found'}});
  const body=req.body as {Body?:{stkCallback?:{CheckoutRequestID?:unknown;ResultCode?:unknown;ResultDesc?:unknown;CallbackMetadata?:{Item?:Array<{Name?:unknown;Value?:unknown}>}}}};
  const callback=body?.Body?.stkCallback;
  if(!callback||typeof callback.CheckoutRequestID!=='string'||!Number.isFinite(Number(callback.ResultCode)))return res.status(400).json({error:{code:'INVALID_MPESA_CALLBACK',message:'Callback payload is invalid'}});
