@@ -294,7 +294,7 @@ app.post('/api/v1/webhooks/mpesa/:secret',async(req,res)=>{
  const items=Array.isArray(callback.CallbackMetadata?.Item)?callback.CallbackMetadata.Item:[];
  const amountValue=items.find(item=>item.Name==='Amount')?.Value;
  const receiptValue=items.find(item=>item.Name==='MpesaReceiptNumber')?.Value;
- const result=await subscriptionPaymentRepository.processCallback({checkoutRequestId:callback.CheckoutRequestID,resultCode:Number(callback.ResultCode),resultDescription:String(callback.ResultDesc??''),amount:amountValue===undefined?null:Number(amountValue),receipt:receiptValue===undefined?null:String(receiptValue),payload:req.body});
+ const result=await subscriptionPaymentRepository.processCallback({checkoutRequestId:callback.CheckoutRequestID,resultCode:Number(callback.ResultCode),resultDescription:String(callback.ResultDesc??''),amount:amountValue===undefined?null:Number(amountValue),receipt:receiptValue===undefined?null:String(receiptValue),payload:{checkoutRequestId:callback.CheckoutRequestID,resultCode:Number(callback.ResultCode),resultDescription:String(callback.ResultDesc??''),amount:amountValue===undefined?null:Number(amountValue),receipt:receiptValue===undefined?null:String(receiptValue)}});
  return res.status(200).json({ResultCode:0,ResultDesc:result.found?'Callback accepted':'No matching payment'});
 });
 app.get('/api/v1/billing/plans',async(_req,res)=>{
