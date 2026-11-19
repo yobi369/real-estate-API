@@ -15,7 +15,7 @@ import { AgencyInvitationRepository, type InvitationRole } from './repositories/
 import { AgencyOwnershipTransferRepository } from './repositories/agency-ownership-transfer-repository.js';
 import { SubscriptionRepository } from './repositories/subscription-repository.js';
 import { SubscriptionPaymentRepository } from './repositories/subscription-payment-repository.js';
-import { initiateStkPush,isMpesaConfigured,normalizeKenyanPhone } from './services/mpesa.js';
+import { initiateStkPush,isMpesaConfigured,normalizeKenyanPhone,queryStkPush } from './services/mpesa.js';
 import { z } from 'zod';
 import { demoProperties } from './demo-data.js';
 import { pool } from './db.js';
@@ -85,6 +85,7 @@ const spec={
   '/api/v1/billing/mpesa/stk-push':{post:{tags:['Billing'],summary:'Start an idempotent M-Pesa subscription checkout',security:[{bearerAuth:[]}],parameters:[{name:'X-Agency-ID',in:'header',required:true,schema:{type:'string',format:'uuid'}},{name:'Idempotency-Key',in:'header',required:true,schema:{type:'string',minLength:16,maxLength:128}}],responses:{'202':{description:'STK prompt accepted; payment remains pending'},'403':{description:'Agency owner or admin permission required'},'503':{description:'Daraja is not configured'}}}},
   '/api/v1/webhooks/mpesa/{secret}':{post:{tags:['Billing'],summary:'Receive Daraja STK callback using the configured unguessable callback path',parameters:[{name:'secret',in:'path',required:true,schema:{type:'string'}}],responses:{'200':{description:'Callback accepted'},'404':{description:'Callback route not found'}}}},
   '/api/v1/billing/plans':{get:{tags:['Billing'],summary:'List active agency subscription plans',responses:{'200':{description:'Available plans'},'503':{description:'Billing persistence unavailable'}}}},
+  '/api/v1/billing/payments/{paymentId}/reconcile':{post:{tags:['Billing'],summary:'Reconcile a pending payment using Daraja STK status query',security:[{bearerAuth:[]}],parameters:[{name:'paymentId',in:'path',required:true,schema:{type:'string',format:'uuid'}},{name:'X-Agency-ID',in:'header',required:true,schema:{type:'string',format:'uuid'}}],responses:{'200':{description:'Payment reconciliation result'},'403':{description:'Agency owner or admin permission required'},'502':{description:'Daraja status query failed'}}}},
   '/api/v1/billing/subscription/cancel':{post:{tags:['Billing'],summary:'Schedule cancellation at the end of the current billing period',security:[{bearerAuth:[]}],parameters:[{name:'X-Agency-ID',in:'header',required:true,schema:{type:'string',format:'uuid'}}],responses:{'200':{description:'Cancellation scheduled'},'403':{description:'Agency owner or admin permission required'},'409':{description:'No active subscription'}}}},
   '/api/v1/billing/subscription':{get:{tags:['Billing'],summary:'Get the selected agency subscription and payment history',security:[{bearerAuth:[]}],parameters:[{name:'X-Agency-ID',in:'header',required:true,schema:{type:'string',format:'uuid'}}],responses:{'200':{description:'Subscription and recent payment history'},'401':{description:'Authentication required'},'403':{description:'Agency owner or admin permission required'}}}},
   '/api/v1/agencies/properties':{get:{tags:['Agencies'],summary:'List all listings, including drafts and archived records, in the selected agency',security:[{bearerAuth:[]}],parameters:[{name:'X-Agency-ID',in:'header',required:true,schema:{type:'string',format:'uuid'}},{name:'page',in:'query',schema:{type:'integer',minimum:1}},{name:'limit',in:'query',schema:{type:'integer',minimum:1,maximum:100}}],responses:{'200':{description:'Agency-scoped private inventory'},'401':{description:'Authentication required'},'403':{description:'Agency membership required'}}}},
@@ -297,6 +298,20 @@ app.post('/api/v1/webhooks/mpesa/:secret',async(req,res)=>{
 app.get('/api/v1/billing/plans',async(_req,res)=>{
  try{return res.json({data:{items:await subscriptionRepository.listActivePlans()}});}
  catch(error){if(error instanceof Error&&error.message==='PERSISTENCE_REQUIRED')return res.status(503).json({error:{code:'PERSISTENCE_REQUIRED',message:'Billing plans require PostgreSQL persistence'}});throw error;}
+});
+app.post('/api/v1/billing/payments/:paymentId/reconcile',billingCheckoutRateLimit,authenticate,async(req,res)=>{
+ const agency=await resolveActiveAgency(req,res);if(!agency)return;
+ if(!['owner','admin'].includes(agency.role))return res.status(403).json({error:{code:'FORBIDDEN',message:'Agency owner or admin permission is required to reconcile billing'}});
+ if(!isMpesaConfigured())return res.status(503).json({error:{code:'MPESA_NOT_CONFIGURED',message:'M-Pesa reconciliation is not configured for this environment'}});
+ const paymentId=z.string().uuid().safeParse(req.params.paymentId);if(!paymentId.success)return res.status(400).json({error:{code:'INVALID_PAYMENT_ID',message:'Payment identifier must be a UUID'}});
+ const payment=await subscriptionPaymentRepository.getForReconciliation(agency.id,paymentId.data);
+ if(!payment)return res.status(404).json({error:{code:'PAYMENT_NOT_FOUND',message:'Payment was not found in this agency'}});
+ if(payment.status!=='pending'||!payment.checkoutRequestId)return res.json({data:{paymentId:payment.id,status:payment.status}});
+ try{
+  const query=await queryStkPush(payment.checkoutRequestId);
+  const result=await subscriptionPaymentRepository.processQuery({agencyId:agency.id,paymentId:payment.id,resultCode:query.resultCode,resultDescription:query.resultDescription,payload:query});
+  return res.json({data:{paymentId:payment.id,status:result.status,resultDescription:query.resultDescription}});
+ }catch{return res.status(502).json({error:{code:'MPESA_QUERY_FAILED',message:'Safaricom could not confirm this payment yet. It remains pending.'}});}
 });
 app.post('/api/v1/billing/subscription/cancel',authenticate,async(req,res)=>{
  const agency=await resolveActiveAgency(req,res);if(!agency)return;
