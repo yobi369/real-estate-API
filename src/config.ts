@@ -16,7 +16,7 @@ const schema=z.object({
  MPESA_SHORTCODE:z.string().regex(/^\d{5,7}$/).optional(),
  MPESA_PASSKEY:z.string().min(1).optional(),
  MPESA_CALLBACK_BASE_URL:z.string().url().optional(),
- MPESA_CALLBACK_SECRET:z.string().min(32).optional()
+ MPESA_CALLBACK_SECRET:z.string().regex(/^[A-Za-z0-9_-]{32,128}$/).optional()
 });
 const parsed=schema.safeParse(process.env);
 if(!parsed.success)throw new Error('Invalid environment configuration: '+parsed.error.issues.map(i=>i.path.join('.')+': '+i.message).join('; '));
@@ -26,5 +26,9 @@ const mpesaFields=[parsed.data.MPESA_CONSUMER_KEY,parsed.data.MPESA_CONSUMER_SEC
 const mpesaAny=mpesaFields.some(Boolean);
 const mpesaAll=mpesaFields.every(Boolean);
 if(mpesaAny&&!mpesaAll)throw new Error('M-Pesa requires consumer key, consumer secret, shortcode, passkey, callback base URL, and callback secret');
-if(mpesaAll&&!parsed.data.MPESA_CALLBACK_BASE_URL?.startsWith('https://'))throw new Error('Production M-Pesa callback URL must use HTTPS');
+if(mpesaAll){
+ if(!parsed.data.MPESA_CALLBACK_BASE_URL?.startsWith('https://'))throw new Error('M-Pesa callback URL must use HTTPS');
+ const callbackUrl=new URL(parsed.data.MPESA_CALLBACK_BASE_URL);
+ if(callbackUrl.pathname!=='/'||callbackUrl.search||callbackUrl.hash)throw new Error('M-Pesa callback base URL must be an origin without a path, query, or fragment');
+}
 export const config=Object.freeze(parsed.data);
