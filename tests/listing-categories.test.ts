@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import request from 'supertest';
+import { randomUUID } from 'node:crypto';
 import { app, propertyRepository } from '../src/app.js';
 import { bootstrapAdmin, resetMemoryUsersForTests } from '../src/auth.js';
 import { config } from '../src/config.js';
