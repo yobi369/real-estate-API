@@ -8,7 +8,9 @@ This checklist separates implemented controls from external or incomplete releas
 - [x] PostgreSQL repositories, constraints, indexes, and additive multi-agency schema initialization.
 - [x] Development/test in-memory adapter; readiness returns 503 without PostgreSQL.
 - [x] Scrypt password hashing, expiring HMAC-signed bearer tokens, and secret-protected first-admin bootstrap.
-- [x] Agency onboarding, active membership context resolution, agency-scoped listing writes, publication lifecycle, scoped enquiry inbox, and owner/admin membership administration with cross-agency isolation and owner protection.
+- [x] Agency onboarding, active membership context resolution, agency-scoped listing writes and private inventory reads, publication lifecycle, scoped enquiry inbox, and owner/admin membership administration with cross-agency isolation and owner protection.
+- [x] Authenticated agency console for inventory, enquiries, and team operations.
+- [x] Subscription-plan catalog, agency subscription state, and payment ledger schema with owner/admin-only billing summary APIs. Pricing activation and live payment collection are not configured.
 - [x] Public reads restricted to published listings; public responses omit owner and agency identifiers.
 - [x] Input validation, Helmet, configured CORS, request IDs, redacted sensitive headers, and bounded JSON body parsing.
 - [x] Process-local rate limits for bootstrap, registration, login, public search/demo, and enquiries; limits are not distributed.
@@ -24,7 +26,8 @@ This checklist separates implemented controls from external or incomplete releas
 - [ ] Verify TLS settings for service and database connections in the target host.
 - [ ] Store a unique JWT secret and deployment credentials in a managed secret store.
 - [ ] Configure automated provider backups/retention and complete an independent encrypted off-host backup plus a restore drill.
-- [ ] Define controlled migration execution, rollback, and deployment ownership. Move DDL/backfill out of application startup before enforcing a least-privilege runtime role.
+- [x] Move schema DDL/backfill out of application startup and provide a separate, explicit migration command using `MIGRATION_DATABASE_URL`.
+- [ ] Define migration rollback and deployment ownership; configure the Render runtime service to use the least-privilege `DATABASE_URL` role.
 - [ ] Configure CORS to the customer's approved origins and verify proxy trust settings.
 - [ ] Confirm the production service plan, availability characteristics, health checks, monitoring, and capacity are suitable for the agreed customer SLA.
 
