@@ -25,7 +25,14 @@ describe('agency private inventory',()=>{
   const created=await request(app).post('/api/v1/properties').set('Authorization',`Bearer ${owner}`).set('X-Agency-ID',agency).send(sample);
   expect(created.status).toBe(201);
   expect(created.body.data.publicationStatus).toBe('draft');
-  expect((await request(app).get('/api/v1/agencies/properties').set('Authorization',`Bearer ${owner}`).set('X-Agency-ID',agency)).body.data.items).toHaveLength(1);
+  const second=await request(app).post('/api/v1/properties').set('Authorization',`Bearer ${owner}`).set('X-Agency-ID',agency).send({...sample,title:'Nairobi apartment',city:'Nairobi',propertyType:'apartment'});
+  expect(second.status).toBe(201);
+  const inventory=await request(app).get('/api/v1/agencies/properties?limit=1&page=2').set('Authorization',`Bearer ${owner}`).set('X-Agency-ID',agency);
+  expect(inventory.status).toBe(200);
+  expect(inventory.body.data.total).toBe(2);
+  expect(inventory.body.data.items).toHaveLength(1);
+  const filtered=await request(app).get('/api/v1/agencies/properties?city=Nairobi').set('Authorization',`Bearer ${owner}`).set('X-Agency-ID',agency);
+  expect(filtered.body.data.items).toHaveLength(1);
   const outsider=await register('private-inventory-outsider@example.com');
   const other=await request(app).post('/api/v1/agencies').set('Authorization',`Bearer ${outsider}`).send({name:'Unrelated Agency'});
   expect(other.status).toBe(201);
