@@ -195,6 +195,8 @@ app.post('/api/v1/agencies/invitations',authenticate,async(req,res)=>{
  }catch(error){
   if(error instanceof Error&&error.message==='PERSISTENCE_REQUIRED')return res.status(503).json({error:{code:'PERSISTENCE_REQUIRED',message:'Agency invitations require PostgreSQL persistence'}});
   if(error instanceof Error&&error.message==='INVITATION_ALREADY_PENDING')return res.status(409).json({error:{code:'INVITATION_ALREADY_PENDING',message:'An active invitation already exists for this email'}});
+  if(error instanceof Error&&error.message==='SUBSCRIPTION_REQUIRED')return res.status(402).json({error:{code:'SUBSCRIPTION_REQUIRED',message:'An active agency subscription is required to invite team members'}});
+  if(error instanceof Error&&error.message==='TEAM_LIMIT_REACHED')return res.status(409).json({error:{code:'TEAM_LIMIT_REACHED',message:'This agency has reached its team member allowance'}});
   if(error instanceof Error&&error.message==='INVITATION_ROLE_FORBIDDEN')return res.status(403).json({error:{code:'INVITATION_ROLE_FORBIDDEN',message:'Admins may only invite agents and viewers'}});
   if(error instanceof Error&&error.message==='ACTOR_NOT_AUTHORIZED')return res.status(403).json({error:{code:'FORBIDDEN',message:'Your agency membership does not permit this operation'}});
   throw error;
