@@ -16,7 +16,7 @@
 
 - Replace process-local rate limits with a shared store or enforce equivalent edge/WAF controls before horizontal scaling. Review proxy trust configuration for the actual hosting topology.
 - Add email verification, secure password reset, account lockout/abuse workflows, and token revocation/rotation/session lifecycle.
-- Extend audit coverage to property create/update/delete, membership changes, invitations, and administrative actions.
+- Extend audit coverage to membership changes, invitation lifecycle, and additional administrative actions; listing create/update/delete/publication and agency creation/bootstrap are already audited transactionally.
 - Implement invitation create/accept/revoke workflows with single-use token verification and expiry enforcement.
 - Configure production PostgreSQL TLS, least-privilege database role, backups, retention, and restore drills.
 - Complete dependency/secret/static-analysis review, independent authorization review, penetration testing, and representative load testing.
