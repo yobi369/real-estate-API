@@ -40,9 +40,11 @@ export async function initiateStkPush(input:{phoneNumber:string;amountMinor:numb
  const callback=(callbackBase.endsWith('/')?callbackBase.slice(0,-1):callbackBase)+'/api/v1/webhooks/mpesa/'+config.MPESA_CALLBACK_SECRET;
  const accountReference='SP'+input.agencyId.replaceAll('-','').slice(0,8);
  const payload={BusinessShortCode:shortcode,Password:password,Timestamp:timestamp,TransactionType:'CustomerPayBillOnline',Amount:input.amountMinor/100,PartyA:phone,PartyB:shortcode,PhoneNumber:phone,CallBackURL:callback,AccountReference:accountReference,TransactionDesc:'Agency subscription'};
- const response=await fetch(baseUrl()+'/mpesa/stkpush/v1/processrequest',{method:'POST',headers:{Authorization:'Bearer '+await accessToken(),'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify(payload),signal:AbortSignal.timeout(15000)});
+ let response:Response;try{response=await fetch(baseUrl()+'/mpesa/stkpush/v1/processrequest',{method:'POST',headers:{Authorization:'Bearer '+await accessToken(),'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify(payload),signal:AbortSignal.timeout(15000)});}catch{throw new Error('MPESA_OUTCOME_UNKNOWN');}
+ if(response.status>=500)throw new Error('MPESA_OUTCOME_UNKNOWN');
  const body=await response.json().catch(()=>({})) as {ResponseCode?:string;ResponseDescription?:string;CustomerMessage?:string;CheckoutRequestID?:string;MerchantRequestID?:string;errorMessage?:string};
- if(!response.ok||body.ResponseCode!=='0'||!body.CheckoutRequestID||!body.MerchantRequestID)throw new Error('MPESA_STK_REJECTED: '+String(body.errorMessage??body.ResponseDescription??'Daraja did not accept the STK request').slice(0,250));
+ if(!response.ok||body.ResponseCode!==undefined&&body.ResponseCode!=='0')throw new Error('MPESA_STK_REJECTED: '+String(body.errorMessage??body.ResponseDescription??'Daraja rejected the STK request').slice(0,250));
+ if(body.ResponseCode!=='0'||!body.CheckoutRequestID||!body.MerchantRequestID)throw new Error('MPESA_OUTCOME_UNKNOWN');
  return {merchantRequestId:body.MerchantRequestID,checkoutRequestId:body.CheckoutRequestID,customerMessage:String(body.CustomerMessage??'Payment prompt sent to your phone')};
 }
 export type StkQueryResult={responseCode:string|null;resultCode:number|null;resultDescription:string;};
