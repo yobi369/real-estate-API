@@ -5,6 +5,7 @@
 - `agencies`: agency/workspace identity and lifecycle.
 - `agency_memberships`: per-user agency role and membership state.
 - `agency_invitations`: expiring, hashed invitation-token storage with acceptance and revocation state.
+- `agency_ownership_transfers`: 48-hour hashed transfer tokens, recipient binding, and acceptance/revocation state.
 - `audit_events`: append-oriented event storage.
 - Nullable `agency_id` tenant references on properties and enquiries during compatibility rollout.
 - Roles: `owner`, `admin`, `agent`, and `viewer`. Invitation roles exclude owner.
@@ -24,6 +25,8 @@ No existing user role is rewritten, no property or enquiry is deleted, and no bi
 - `DELETE /api/v1/agencies/members/{userId}` suspends non-owner memberships; self-removal and owner removal are blocked.
 - Role changes and member removals are audited transactionally. Repository transactions revalidate the actor's current role to prevent stale authorization decisions.
 - Invitation creation and revocation revalidate owner/admin authority inside their transactions; admins cannot issue admin invitations.
+- `POST /api/v1/agencies/ownership-transfer` is owner-only and targets an active admin in the same agency. It supersedes any pending transfer and issues a one-time 48-hour token for trusted delivery.
+- `POST /api/v1/agencies/ownership-transfer/accept` is restricted to the designated admin account. It locks the agency and transfer in a consistent order, revalidates both memberships, promotes the recipient to owner, demotes the previous owner to admin, and records the audit event atomically.
 - Authenticated write routes require a valid `X-Agency-ID` and verify active membership in that agency. A caller-supplied ID alone never grants access.
 - Property creation allows owner/admin/agent roles; agents may update or delete their own listings; owner/admin can manage agency listings.
 - Publication transitions are restricted to owner/admin and are audited transactionally.
@@ -33,7 +36,7 @@ No existing user role is rewritten, no property or enquiry is deleted, and no bi
 
 ## Audit and invitation boundaries
 
-The current audit trail covers agency creation (including bootstrap), property create/update/delete, publication transitions, invitation create/accept/revoke, and membership role updates/removals. These mutation events are committed or rolled back with their corresponding state changes.
+The current audit trail covers agency creation (including bootstrap), property create/update/delete, publication transitions, invitation create/accept/revoke, membership role updates/removals, and ownership-transfer initiation/acceptance. These mutation events are committed or rolled back with their corresponding state changes. These mutation events are committed or rolled back with their corresponding state changes.
 
 ## Deployment and rollback
 
@@ -45,4 +48,4 @@ The current audit trail covers agency creation (including bootstrap), property c
 
 ## Milestone boundary
 
-The branch now provides the multi-agency schema, onboarding, membership-based context resolution, agency-scoped property writes, publication lifecycle, and agency-scoped enquiry inbox. It now provides invitation creation, email-bound acceptance, and revocation. It does not yet provide ownership transfer, billing, M-Pesa collection, distributed rate limiting, or complete audit coverage. Production onboarding remains blocked on the release gates in [PRODUCTION-READINESS.md](PRODUCTION-READINESS.md).
+The branch now provides the multi-agency schema, onboarding, membership-based context resolution, agency-scoped property writes, publication lifecycle, and agency-scoped enquiry inbox. It now provides invitation creation, email-bound acceptance, and revocation. It does not yet provide billing, M-Pesa collection, distributed rate limiting, or complete audit coverage. Production onboarding remains blocked on the release gates in [PRODUCTION-READINESS.md](PRODUCTION-READINESS.md).
