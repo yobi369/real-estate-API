@@ -121,8 +121,10 @@ export async function migrate(): Promise<void> {
         invited_by uuid REFERENCES users(id) ON DELETE SET NULL,
         expires_at timestamptz NOT NULL,
         accepted_at timestamptz,
+        revoked_at timestamptz,
         created_at timestamptz NOT NULL DEFAULT now()
       );
+      ALTER TABLE agency_invitations ADD COLUMN IF NOT EXISTS revoked_at timestamptz;
       CREATE INDEX IF NOT EXISTS agency_invitations_agency_idx ON agency_invitations (agency_id,created_at DESC);
       CREATE TABLE IF NOT EXISTS audit_events (
         id uuid PRIMARY KEY,
