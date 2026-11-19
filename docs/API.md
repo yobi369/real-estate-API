@@ -46,3 +46,14 @@ All invitation routes require a bearer token and an `X-Agency-ID` header where a
 - `DELETE /api/v1/agencies/invitations/{id}` — agency owner/admin revokes a pending invitation.
 
 Invitation creation, acceptance, and revocation write audit events in the same transaction as the state change. An existing active membership cannot be overwritten by accepting an invitation.
+
+
+## Agency membership administration
+
+All routes below require a bearer token and a valid `X-Agency-ID`. The selected agency is verified against the caller's active membership.
+
+- `GET /api/v1/agencies/members` — owner/admin only; lists active, invited, and suspended membership records for the selected agency, including member email, role, status, and join date.
+- `PATCH /api/v1/agencies/members/{userId}` with `{"role":"agent"}` — changes a non-owner member role. Allowed roles are `admin`, `agent`, and `viewer`. Owners may assign any non-owner role; admins may only manage agent/viewer members and cannot grant admin privileges.
+- `DELETE /api/v1/agencies/members/{userId}` — suspends an active non-owner membership. Owners may remove any non-owner member; admins may remove only agents/viewers. Self-removal is blocked.
+
+The owner role is immutable through these endpoints; ownership transfer requires a separate future workflow. The owner cannot be removed, so an agency cannot be left without its owner. Role changes and removals are audited in the same database transaction as the membership mutation. Cross-agency member access is denied.
