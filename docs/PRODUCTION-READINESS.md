@@ -29,7 +29,7 @@ This checklist separates implemented controls from external or incomplete releas
 ### Identity and application security
 - [ ] Replace process-local rate limits with shared/distributed enforcement or an edge/WAF equivalent before scaling horizontally.
 - [ ] Implement email verification, secure password reset, token revocation/rotation, and account/session lifecycle controls.
-- [ ] Extend audit events to listing create/update/delete, membership administration, invitations, and privileged operations.
+- [ ] Extend audit events to membership administration, invitation lifecycle, and remaining privileged operations; listing create/update/delete/publication and agency creation/bootstrap are covered.
 - [ ] Implement invitation create/accept/revoke endpoints; schema storage alone is not an invitation workflow.
 - [ ] Complete dependency, secret, and static-analysis review and resolve material findings.
 - [ ] Conduct independent authorization review and penetration testing.
