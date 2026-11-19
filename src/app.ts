@@ -73,6 +73,8 @@ const spec={
   '/api/v1/auth/login':{post:{tags:['Authentication'],summary:'Authenticate a listing operator',requestBody:{required:true,content:{'application/json':{schema:{type:'object',required:['email','password'],properties:{email:{type:'string',format:'email'},password:{type:'string'}}}}}},responses:{'200':{description:'Authenticated'},'401':{description:'Invalid credentials'}}}},
   '/api/v1/agencies':{post:{tags:['Agencies'],summary:'Create an agency workspace and become its owner',security:[{bearerAuth:[]}],requestBody:{required:true,content:{'application/json':{schema:{type:'object',additionalProperties:false,required:['name'],properties:{name:{type:'string',minLength:2,maxLength:160}}}}}},responses:{'201':{description:'Agency created'},'400':{description:'Invalid agency name'},'401':{description:'Authentication required'},'503':{description:'Persistent storage required'}}}},
   '/api/v1/agencies/me':{get:{tags:['Agencies'],summary:'List the authenticated user\'s active agencies',security:[{bearerAuth:[]}],responses:{'200':{description:'Agency memberships'},'401':{description:'Authentication required'},'503':{description:'Persistent storage required'}}}},
+  '/api/v1/agencies/members':{get:{tags:['Agencies'],summary:'List members in the selected agency (owner/admin only)',security:[{bearerAuth:[]}],parameters:[{name:'X-Agency-ID',in:'header',required:true,schema:{type:'string',format:'uuid'}}],responses:{'200':{description:'Agency members'},'403':{description:'Owner/admin permission required'}}}},
+  '/api/v1/agencies/members/{userId}':{patch:{tags:['Agencies'],summary:'Change a non-owner member role',security:[{bearerAuth:[]}],parameters:[{name:'userId',in:'path',required:true,schema:{type:'string',format:'uuid'}},{name:'X-Agency-ID',in:'header',required:true,schema:{type:'string',format:'uuid'}}],requestBody:{required:true,content:{'application/json':{schema:{type:'object',additionalProperties:false,required:['role'],properties:{role:{type:'string',enum:['admin','agent','viewer']}}}}}},responses:{'200':{description:'Member role updated'},'403':{description:'Role change not permitted'},'404':{description:'Active member not found'},'409':{description:'Owner role is immutable'}}},delete:{tags:['Agencies'],summary:'Remove an active non-owner member',security:[{bearerAuth:[]}],parameters:[{name:'userId',in:'path',required:true,schema:{type:'string',format:'uuid'}},{name:'X-Agency-ID',in:'header',required:true,schema:{type:'string',format:'uuid'}}],responses:{'204':{description:'Member removed'},'403':{description:'Removal not permitted'},'404':{description:'Active member not found'},'409':{description:'Last owner cannot be removed'}}}},
   '/api/v1/agencies/invitations':{post:{tags:['Agencies'],summary:'Create an email-bound agency invitation (owner/admin only)',security:[{bearerAuth:[]}],parameters:[{name:'X-Agency-ID',in:'header',required:true,schema:{type:'string',format:'uuid'}}],requestBody:{required:true,content:{'application/json':{schema:{type:'object',additionalProperties:false,required:['email','role'],properties:{email:{type:'string',format:'email'},role:{type:'string',enum:['admin','agent','viewer']}}}}}},responses:{'201':{description:'Invitation created; token is returned once for trusted delivery'},'403':{description:'Agency owner/admin permission required'},'409':{description:'Pending invitation already exists'},'503':{description:'PostgreSQL required'}}}},
   '/api/v1/agencies/invitations/accept':{post:{tags:['Agencies'],summary:'Accept an invitation using the authenticated matching email account',security:[{bearerAuth:[]}],requestBody:{required:true,content:{'application/json':{schema:{type:'object',additionalProperties:false,required:['token'],properties:{token:{type:'string'}}}}}},responses:{'200':{description:'Agency membership activated'},'400':{description:'Invalid, expired, revoked, or used invitation'},'403':{description:'Invitation email does not match authenticated account'}}}},
   '/api/v1/agencies/invitations/{id}':{delete:{tags:['Agencies'],summary:'Revoke a pending invitation (owner/admin only)',security:[{bearerAuth:[]}],parameters:[{name:'id',in:'path',required:true,schema:{type:'string',format:'uuid'}},{name:'X-Agency-ID',in:'header',required:true,schema:{type:'string',format:'uuid'}}],responses:{'204':{description:'Invitation revoked'},'403':{description:'Agency owner/admin permission required'},'404':{description:'Pending invitation not found'}}}},
@@ -108,6 +110,54 @@ app.get('/api/v1/agencies/me',authenticate,async(req,res)=>{
  try{return res.json({data:{items:await agencyRepository.listForUser(req.principal!.id)}});}
  catch(error){
   if(error instanceof Error&&error.message==='PERSISTENCE_REQUIRED')return res.status(503).json({error:{code:'PERSISTENCE_REQUIRED',message:'Agency workspaces require PostgreSQL persistence'}});
+  throw error;
+ }
+});
+app.get('/api/v1/agencies/members',authenticate,async(req,res)=>{
+ const agency=await resolveActiveAgency(req,res);if(!agency)return;
+ if(!['owner','admin'].includes(agency.role))return res.status(403).json({error:{code:'FORBIDDEN',message:'Agency owner or admin permission is required'}});
+ try{return res.json({data:{items:await agencyRepository.listMembers(agency.id)}});}
+ catch(error){if(error instanceof Error&&error.message==='PERSISTENCE_REQUIRED')return res.status(503).json({error:{code:'PERSISTENCE_REQUIRED',message:'Agency membership administration requires PostgreSQL persistence'}});throw error;}
+});
+app.patch('/api/v1/agencies/members/:userId',authenticate,async(req,res)=>{
+ const agency=await resolveActiveAgency(req,res);if(!agency)return;
+ if(!['owner','admin'].includes(agency.role))return res.status(403).json({error:{code:'FORBIDDEN',message:'Agency owner or admin permission is required'}});
+ const userId=String(req.params.userId);
+ if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(userId))return res.status(404).json({error:{code:'MEMBER_NOT_FOUND',message:'Active agency member was not found'}});
+ if(userId===req.principal!.id)return res.status(409).json({error:{code:'SELF_ROLE_CHANGE_BLOCKED',message:'You cannot change your own agency role'}});
+ const parsed=z.object({role:z.enum(['admin','agent','viewer'])}).strict().safeParse(req.body);
+ if(!parsed.success)return res.status(400).json({error:{code:'VALIDATION_ERROR',message:'A valid non-owner member role is required'}});
+ try{
+  const members=await agencyRepository.listMembers(agency.id);
+  const target=members.find(member=>member.userId===userId&&member.status==='active');
+  if(!target)return res.status(404).json({error:{code:'MEMBER_NOT_FOUND',message:'Active agency member was not found'}});
+  if(target.role==='owner')return res.status(409).json({error:{code:'OWNER_ROLE_IMMUTABLE',message:'Transfer ownership through a dedicated ownership-transfer workflow'}});
+  if(agency.role==='admin'&&(target.role==='admin'||parsed.data.role==='admin'))return res.status(403).json({error:{code:'ROLE_CHANGE_FORBIDDEN',message:'Admins may only manage agent and viewer memberships'}});
+  const updated=await agencyRepository.updateMemberRole(agency.id,userId,parsed.data.role,req.principal!.id);
+  return updated?res.json({data:updated}):res.status(404).json({error:{code:'MEMBER_NOT_FOUND',message:'Active agency member was not found'}});
+ }catch(error){
+  if(error instanceof Error&&error.message==='PERSISTENCE_REQUIRED')return res.status(503).json({error:{code:'PERSISTENCE_REQUIRED',message:'Agency membership administration requires PostgreSQL persistence'}});
+  if(error instanceof Error&&error.message==='OWNER_ROLE_IMMUTABLE')return res.status(409).json({error:{code:'OWNER_ROLE_IMMUTABLE',message:'The agency owner role cannot be changed'}});
+  throw error;
+ }
+});
+app.delete('/api/v1/agencies/members/:userId',authenticate,async(req,res)=>{
+ const agency=await resolveActiveAgency(req,res);if(!agency)return;
+ if(!['owner','admin'].includes(agency.role))return res.status(403).json({error:{code:'FORBIDDEN',message:'Agency owner or admin permission is required'}});
+ const userId=String(req.params.userId);
+ if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(userId))return res.status(404).json({error:{code:'MEMBER_NOT_FOUND',message:'Active agency member was not found'}});
+ if(userId===req.principal!.id)return res.status(409).json({error:{code:'SELF_REMOVAL_BLOCKED',message:'You cannot remove your own agency membership'}});
+ try{
+  const members=await agencyRepository.listMembers(agency.id);
+  const target=members.find(member=>member.userId===userId&&member.status==='active');
+  if(!target)return res.status(404).json({error:{code:'MEMBER_NOT_FOUND',message:'Active agency member was not found'}});
+  if(target.role==='owner')return res.status(409).json({error:{code:'LAST_OWNER_PROTECTED',message:'The agency owner cannot be removed'}});
+  if(agency.role==='admin'&&target.role==='admin')return res.status(403).json({error:{code:'MEMBER_REMOVAL_FORBIDDEN',message:'Admins may only remove agents and viewers'}});
+  const removed=await agencyRepository.removeMember(agency.id,userId,req.principal!.id);
+  return removed?res.status(204).end():res.status(404).json({error:{code:'MEMBER_NOT_FOUND',message:'Active agency member was not found'}});
+ }catch(error){
+  if(error instanceof Error&&error.message==='PERSISTENCE_REQUIRED')return res.status(503).json({error:{code:'PERSISTENCE_REQUIRED',message:'Agency membership administration requires PostgreSQL persistence'}});
+  if(error instanceof Error&&error.message==='LAST_OWNER_PROTECTED')return res.status(409).json({error:{code:'LAST_OWNER_PROTECTED',message:'The agency owner cannot be removed'}});
   throw error;
  }
 });
