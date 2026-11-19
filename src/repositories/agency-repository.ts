@@ -74,12 +74,18 @@ export class AgencyRepository {
     try{
       await client.query('BEGIN');
       await client.query('SELECT id FROM agencies WHERE id=$1 FOR UPDATE',[agencyId]);
+      const actor=await client.query<{role:AgencyRole}>(
+        "SELECT role FROM agency_memberships WHERE agency_id=$1 AND user_id=$2 AND status='active' FOR UPDATE",[agencyId,actorId]
+      );
+      const actorRole=actor.rows[0]?.role;
+      if(actorRole!=='owner'&&actorRole!=='admin')throw new Error('ACTOR_NOT_AUTHORIZED');
       const target=await client.query<{role:AgencyRole;status:string}>(
         'SELECT role,status FROM agency_memberships WHERE agency_id=$1 AND user_id=$2 FOR UPDATE',[agencyId,userId]
       );
       const current=target.rows[0];
       if(!current||current.status!=='active'){await client.query('ROLLBACK');return null;}
       if(current.role==='owner')throw new Error('OWNER_ROLE_IMMUTABLE');
+      if(actorRole==='admin'&&(current.role==='admin'||role==='admin'))throw new Error('ROLE_CHANGE_FORBIDDEN');
       const changed=await client.query<{user_id:string;role:AgencyRole}>(
         "UPDATE agency_memberships SET role=$1,updated_at=now() WHERE agency_id=$2 AND user_id=$3 AND status='active' RETURNING user_id,role",
         [role,agencyId,userId]
@@ -100,12 +106,18 @@ export class AgencyRepository {
     try{
       await client.query('BEGIN');
       await client.query('SELECT id FROM agencies WHERE id=$1 FOR UPDATE',[agencyId]);
+      const actor=await client.query<{role:AgencyRole}>(
+        "SELECT role FROM agency_memberships WHERE agency_id=$1 AND user_id=$2 AND status='active' FOR UPDATE",[agencyId,actorId]
+      );
+      const actorRole=actor.rows[0]?.role;
+      if(actorRole!=='owner'&&actorRole!=='admin')throw new Error('ACTOR_NOT_AUTHORIZED');
       const target=await client.query<{role:AgencyRole;status:string}>(
         'SELECT role,status FROM agency_memberships WHERE agency_id=$1 AND user_id=$2 FOR UPDATE',[agencyId,userId]
       );
       const current=target.rows[0];
       if(!current||current.status!=='active'){await client.query('ROLLBACK');return false;}
       if(current.role==='owner')throw new Error('LAST_OWNER_PROTECTED');
+      if(actorRole==='admin'&&current.role==='admin')throw new Error('MEMBER_REMOVAL_FORBIDDEN');
       await client.query(
         "UPDATE agency_memberships SET status='suspended',updated_at=now() WHERE agency_id=$1 AND user_id=$2",
         [agencyId,userId]
