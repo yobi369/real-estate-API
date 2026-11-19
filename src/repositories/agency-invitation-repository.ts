@@ -15,6 +15,7 @@ export class AgencyInvitationRepository {
     const id = randomUUID();
     try {
       await client.query('BEGIN');
+      await client.query('SELECT id FROM agencies WHERE id=$1 FOR UPDATE', [agencyId]);
       const existing = await client.query(
         "SELECT id FROM agency_invitations WHERE agency_id=$1 AND lower(email)=lower($2) AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at>now() FOR UPDATE",
         [agencyId, email]
