@@ -85,3 +85,42 @@ describe('agency onboarding',()=>{
   expect(listed.body.data.items.some((item:{id:string})=>item.id===created.body.data.id)).toBe(false);
  });
 });
+
+
+describe('agency invitation security',()=>{
+ it('creates, accepts, and audits an email-bound invitation exactly once',async()=>{
+  if(!pool)return;
+  const owner=await bootstrap('invitation-owner@example.com');
+  const agency=await agencyId(owner);
+  const invited=await register('invited-agent@example.com');
+  const created=await request(app).post('/api/v1/agencies/invitations').set('Authorization',`Bearer ${owner}`).set('X-Agency-ID',agency).send({email:'invited-agent@example.com',role:'agent'});
+  expect(created.status).toBe(201);
+  expect(created.body.data.token).toBeTruthy();
+  const accepted=await request(app).post('/api/v1/agencies/invitations/accept').set('Authorization',`Bearer ${invited}`).send({token:created.body.data.token});
+  expect(accepted.status).toBe(200);
+  expect(accepted.body.data).toEqual({agencyId:agency,role:'agent'});
+  expect((await request(app).post('/api/v1/agencies/invitations/accept').set('Authorization',`Bearer ${invited}`).send({token:created.body.data.token})).status).toBe(400);
+  const stored=await pool.query<{token_hash:string;accepted_at:Date|null;role:string}>('SELECT token_hash,accepted_at,role FROM agency_invitations WHERE id=$1',[created.body.data.id]);
+  expect(stored.rows[0]?.token_hash).not.toBe(created.body.data.token);
+  expect(stored.rows[0]?.accepted_at).toBeTruthy();
+  expect(stored.rows[0]?.role).toBe('agent');
+  const audit=await pool.query<{action:string}>("SELECT action FROM audit_events WHERE entity_type='agency_invitation' AND entity_id=$1 ORDER BY action",[created.body.data.id]);
+  expect(audit.rows.map(row=>row.action)).toEqual(['agency.invitation.accepted','agency.invitation.created']);
+  const forbidden=await request(app).post('/api/v1/agencies/invitations').set('Authorization',`Bearer ${invited}`).set('X-Agency-ID',agency).send({email:'another@example.com',role:'viewer'});
+  expect(forbidden.status).toBe(403);
+ });
+
+ it('rejects email mismatch and supports agency-scoped revocation',async()=>{
+  if(!pool)return;
+  const owner=await bootstrap('invitation-owner-two@example.com');
+  const agency=await agencyId(owner);
+  const wrongUser=await register('wrong-recipient@example.com');
+  const created=await request(app).post('/api/v1/agencies/invitations').set('Authorization',`Bearer ${owner}`).set('X-Agency-ID',agency).send({email:'right-recipient@example.com',role:'viewer'});
+  expect(created.status).toBe(201);
+  expect((await request(app).post('/api/v1/agencies/invitations/accept').set('Authorization',`Bearer ${wrongUser}`).send({token:created.body.data.token})).status).toBe(403);
+  expect((await request(app).delete(`/api/v1/agencies/invitations/${created.body.data.id}`).set('Authorization',`Bearer ${owner}`).set('X-Agency-ID',agency)).status).toBe(204);
+  expect((await request(app).post('/api/v1/agencies/invitations/accept').set('Authorization',`Bearer ${wrongUser}`).send({token:created.body.data.token})).status).toBe(400);
+  const audit=await pool.query<{action:string}>("SELECT action FROM audit_events WHERE entity_type='agency_invitation' AND entity_id=$1",[created.body.data.id]);
+  expect(audit.rows.map(row=>row.action).sort()).toEqual(['agency.invitation.created','agency.invitation.revoked']);
+ });
+});
