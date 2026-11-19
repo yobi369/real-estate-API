@@ -36,6 +36,7 @@ describe('agency-scoped enquiries',()=>{
   const ownerAgency=await agencyId(owner);
   const listing=await request(app).post('/api/v1/properties').set('Authorization',`Bearer ${owner}`).set('X-Agency-ID',ownerAgency).send(sample);
   expect(listing.status).toBe(201);
+  await publishListing(owner,listing.body.data.id);
   const submitted=await request(app).post('/api/v1/inquiries').send({requestType:'viewing',name:'Buyer Person',email:'buyer@example.com',phone:'+254700000000',message:'I would like to arrange a viewing.',listingId:listing.body.data.id});
   expect(submitted.status).toBe(201);
   const ownerInbox=await request(app).get('/api/v1/inquiries').set('Authorization',`Bearer ${owner}`).set('X-Agency-ID',ownerAgency);
