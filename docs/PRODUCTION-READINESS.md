@@ -12,7 +12,7 @@ This checklist separates implemented controls from external or incomplete releas
 - [x] Public reads restricted to published listings; public responses omit owner and agency identifiers.
 - [x] Input validation, Helmet, configured CORS, request IDs, redacted sensitive headers, and bounded JSON body parsing.
 - [x] Process-local rate limits for bootstrap, registration, login, public search/demo, and enquiries; limits are not distributed.
-- [x] Security regression tests for headers, auth throttling, and oversized JSON payload handling (CI result pending for the current feature branch revision).
+- [x] Security regression tests for headers, auth throttling, oversized JSON payload handling, and enquiry routing (37 tests passed on Node 22/24 with PostgreSQL 16; see QUALITY-EVIDENCE.md).
 - [x] Dependency-free HTTP benchmark runner and documented evidence procedure; no production capacity claim has been established.
 - [x] CI workflow audits production dependencies and runs typecheck, tests, build, and lint on Node 22/24 with PostgreSQL 16.
 
