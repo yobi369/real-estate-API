@@ -173,6 +173,7 @@ describe('agency membership administration',()=>{
     const adminId=members.find((m:{email:string})=>m.email==='membership-admin@example.com')!.userId;
     const agentId=members.find((m:{email:string})=>m.email==='membership-agent-two@example.com')!.userId;
     expect((await request(app).get('/api/v1/agencies/members').set('Authorization',`Bearer ${agent}`).set('X-Agency-ID',agency)).status).toBe(403);
+    expect((await request(app).post('/api/v1/agencies/invitations').set('Authorization',`Bearer ${admin}`).set('X-Agency-ID',agency).send({email:'elevated-invite@example.com',role:'admin'})).status).toBe(403);
     expect((await request(app).patch(`/api/v1/agencies/members/${agentId}`).set('Authorization',`Bearer ${admin}`).set('X-Agency-ID',agency).send({role:'admin'})).status).toBe(403);
     expect((await request(app).delete(`/api/v1/agencies/members/${adminId}`).set('Authorization',`Bearer ${admin}`).set('X-Agency-ID',agency)).status).toBe(403);
     expect((await request(app).patch(`/api/v1/agencies/members/${adminId}`).set('Authorization',`Bearer ${owner}`).set('X-Agency-ID',agency).send({role:'viewer'})).status).toBe(200);
