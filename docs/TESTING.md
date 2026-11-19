@@ -2,7 +2,7 @@
 
 Run `npm install` and `npm run verify`. This chains TypeScript checks, Vitest API tests, build, and ESLint.
 
-Regression coverage includes health/docs, registration/login, password policy, duplicate email, invalid bearer tokens, unauthorized writes, agency context, cross-agency property and enquiry isolation, publication visibility/audit, validation, filtering, pagination, browser security headers, authentication throttling, and oversized JSON handling.
+Regression coverage includes health/docs, registration/login, password policy, duplicate email, invalid bearer tokens, unauthorized writes, agency context, cross-agency property and enquiry isolation, publication visibility, transactional listing create/update/delete audit events, validation, filtering, pagination, browser security headers, authentication throttling, and oversized JSON handling.
 
 GitHub Actions runs Node.js 22 and 24 with PostgreSQL 16 and audits production dependencies before `npm run verify`. Check the actual workflow conclusion for the current commit; workflow configuration alone is not proof of a pass.
 
