@@ -42,6 +42,7 @@
           <button class="nav-item" data-view="listings">▦ <span>Listings</span></button>
           <button class="nav-item" data-view="enquiries">✉ <span>Enquiries</span></button>
           <button class="nav-item" data-view="team">♙ <span>Team</span></button>
+          <button class="nav-item" data-view="billing">◈ <span>Billing</span></button>
         </nav>
         <div class="sidebar-bottom"><span class="status-dot"></span><span>Secure workspace</span></div>
       </aside>
@@ -94,6 +95,20 @@
             <p class="muted small">Invitations currently use secure manual delivery. The one-time token will be shown after creation; send it only to the invited person through a trusted channel.</p><div id="invite-result" class="notice"></div>
           </div>
           <div class="content-card"><div class="card-heading"><div><p class="eyebrow">AGENCY MEMBERS</p><h2>People with access</h2></div><button id="refresh-team" class="quiet">↻ Refresh</button></div><div id="team-list" class="table-wrap"></div></div>
+        <section class="view" id="view-billing">
+          <div class="page-heading"><div><p class="eyebrow">SUBSCRIPTION & PAYMENTS</p><h1>Agency billing</h1><p class="muted">Manage your plan and review verified payments.</p></div><button id="refresh-billing" class="quiet">↻ Refresh</button></div>
+          <div class="content-card"><div class="card-heading"><div><p class="eyebrow">CURRENT PLAN</p><h2>Subscription status</h2></div><button id="cancel-subscription" class="quiet hidden" type="button">Cancel at period end</button></div><p id="billing-current-summary" class="muted">Loading subscription...</p></div>
+          <div class="content-card"><div class="card-heading"><div><p class="eyebrow">SECURE CHECKOUT</p><h2>Choose a plan</h2></div></div>
+            <form id="billing-checkout" class="invite-form">
+              <label>Subscription plan<select id="billing-plan" name="planCode" required><option value="">Loading plans...</option></select></label>
+              <label>M-Pesa phone number<input name="phoneNumber" type="tel" required inputmode="tel" placeholder="0712 345 678"></label>
+              <button id="billing-submit" class="primary" type="submit" disabled>Pay with M-Pesa</button>
+            </form>
+            <p id="billing-plan-help" class="muted small">Plans and checkout are available when configured by platform support.</p>
+            <p id="billing-message" class="notice" role="status"></p>
+          </div>
+          <div class="content-card"><div class="card-heading"><div><p class="eyebrow">PAYMENT HISTORY</p><h2>Recent transactions</h2></div></div><div id="billing-payments" class="table-wrap"></div></div>
+        </section>
         </section>
       </section>
     </section>
