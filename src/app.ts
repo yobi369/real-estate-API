@@ -13,6 +13,7 @@ import { InquiryRepository } from './repositories/inquiry-repository.js';
 import { AgencyRepository } from './repositories/agency-repository.js';
 import { AgencyInvitationRepository, type InvitationRole } from './repositories/agency-invitation-repository.js';
 import { AgencyOwnershipTransferRepository } from './repositories/agency-ownership-transfer-repository.js';
+import { SubscriptionRepository } from './repositories/subscription-repository.js';
 import { z } from 'zod';
 import { demoProperties } from './demo-data.js';
 import { pool } from './db.js';
@@ -27,6 +28,7 @@ export const inquiryRepository=new InquiryRepository();
 export const agencyRepository=new AgencyRepository();
 export const agencyInvitationRepository=new AgencyInvitationRepository();
 export const agencyOwnershipTransferRepository=new AgencyOwnershipTransferRepository();
+export const subscriptionRepository=new SubscriptionRepository();
 const invitationCreateSchema=z.object({email:z.string().trim().email().max(254).transform(v=>v.toLowerCase()),role:z.enum(['admin','agent','viewer'])}).strict();
 const invitationAcceptSchema=z.object({token:z.string().min(32).max(128)}).strict();
 const ownershipTransferCreateSchema=z.object({targetUserId:z.string().uuid()}).strict();
@@ -66,8 +68,8 @@ app.use(cors({origin:config.CORS_ORIGIN.split(',').map(v=>v.trim()),credentials:
 app.use(express.json({limit:'1mb',strict:true}));
 app.use(pinoHttp({level:config.LOG_LEVEL,genReqId:(req,res)=>{const h=req.headers['x-request-id'];const id=typeof h==='string'&&/^[a-zA-Z0-9._-]{1,100}$/.test(h)?h:randomUUID();res.setHeader('x-request-id',id);return id;},redact:['req.headers.authorization','req.headers.cookie','req.headers.x-bootstrap-token']}));
 const spec={
- openapi:'3.1.0',info:{title:'Real Estate API',version:'1.2.0',description:'Property, short-stay and land inventory with authenticated listing management and persisted customer enquiries.'},servers:[{url:'/'}],
- tags:[{name:'Properties',description:'Search and manage property listings.'},{name:'Inquiries',description:'Receive and review customer enquiries.'},{name:'Agencies',description:'Create and discover agency workspaces.'},{name:'Authentication',description:'Register and authenticate listing operators.'},{name:'Health',description:'Service health and readiness.'}],
+ openapi:'3.1.0',info:{title:'Real Estate API',version:'1.3.0',description:'Property, short-stay and land inventory with authenticated listing management and persisted customer enquiries.'},servers:[{url:'/'}],
+ tags:[{name:'Properties',description:'Search and manage property listings.'},{name:'Inquiries',description:'Receive and review customer enquiries.'},{name:'Agencies',description:'Create and discover agency workspaces.'},{name:'Authentication',description:'Register and authenticate listing operators.'},{name:'Health',description:'Service health and readiness.'},{name:'Billing',description:'Agency subscription plans and payment history.'}],
  paths:{
   '/health/live':{get:{tags:['Health'],summary:'Check process liveness',responses:{'200':{description:'Process is alive'}}}},
   '/health/ready':{get:{tags:['Health'],summary:'Check database readiness',responses:{'200':{description:'Database is ready'},'503':{description:'Database unavailable or not configured'}}}},
@@ -75,6 +77,8 @@ const spec={
   '/api/v1/auth/register':{post:{tags:['Authentication'],summary:'Register a listing operator',requestBody:{required:true,content:{'application/json':{schema:{type:'object',required:['email','password'],properties:{email:{type:'string',format:'email'},password:{type:'string',minLength:12}}}}}},responses:{'201':{description:'Account created'},'400':{description:'Invalid registration input'},'409':{description:'Email already registered'}}}},
   '/api/v1/auth/login':{post:{tags:['Authentication'],summary:'Authenticate a listing operator',requestBody:{required:true,content:{'application/json':{schema:{type:'object',required:['email','password'],properties:{email:{type:'string',format:'email'},password:{type:'string'}}}}}},responses:{'200':{description:'Authenticated'},'401':{description:'Invalid credentials'}}}},
   '/api/v1/agencies':{post:{tags:['Agencies'],summary:'Create an agency workspace and become its owner',security:[{bearerAuth:[]}],requestBody:{required:true,content:{'application/json':{schema:{type:'object',additionalProperties:false,required:['name'],properties:{name:{type:'string',minLength:2,maxLength:160}}}}}},responses:{'201':{description:'Agency created'},'400':{description:'Invalid agency name'},'401':{description:'Authentication required'},'503':{description:'Persistent storage required'}}}},
+  '/api/v1/billing/plans':{get:{tags:['Billing'],summary:'List active agency subscription plans',responses:{'200':{description:'Available plans'},'503':{description:'Billing persistence unavailable'}}}},
+  '/api/v1/billing/subscription':{get:{tags:['Billing'],summary:'Get the selected agency subscription and payment history',security:[{bearerAuth:[]}],parameters:[{name:'X-Agency-ID',in:'header',required:true,schema:{type:'string',format:'uuid'}}],responses:{'200':{description:'Subscription and recent payment history'},'401':{description:'Authentication required'},'403':{description:'Agency owner or admin permission required'}}}},
   '/api/v1/agencies/properties':{get:{tags:['Agencies'],summary:'List all listings, including drafts and archived records, in the selected agency',security:[{bearerAuth:[]}],parameters:[{name:'X-Agency-ID',in:'header',required:true,schema:{type:'string',format:'uuid'}},{name:'page',in:'query',schema:{type:'integer',minimum:1}},{name:'limit',in:'query',schema:{type:'integer',minimum:1,maximum:100}}],responses:{'200':{description:'Agency-scoped private inventory'},'401':{description:'Authentication required'},'403':{description:'Agency membership required'}}}},
   '/api/v1/agencies/me':{get:{tags:['Agencies'],summary:'List the authenticated user\'s active agencies',security:[{bearerAuth:[]}],responses:{'200':{description:'Agency memberships'},'401':{description:'Authentication required'},'503':{description:'Persistent storage required'}}}},
   '/api/v1/agencies/members':{get:{tags:['Agencies'],summary:'List members in the selected agency (owner/admin only)',security:[{bearerAuth:[]}],parameters:[{name:'X-Agency-ID',in:'header',required:true,schema:{type:'string',format:'uuid'}}],responses:{'200':{description:'Agency members'},'403':{description:'Owner/admin permission required'}}}},
@@ -244,6 +248,18 @@ app.delete('/api/v1/agencies/invitations/:id',authenticate,async(req,res)=>{
   if(error instanceof Error&&error.message==='ACTOR_NOT_AUTHORIZED')return res.status(403).json({error:{code:'FORBIDDEN',message:'Your agency membership does not permit this operation'}});
   throw error;
  }
+});
+app.get('/api/v1/billing/plans',async(_req,res)=>{
+ try{return res.json({data:{items:await subscriptionRepository.listActivePlans()}});}
+ catch(error){if(error instanceof Error&&error.message==='PERSISTENCE_REQUIRED')return res.status(503).json({error:{code:'PERSISTENCE_REQUIRED',message:'Billing plans require PostgreSQL persistence'}});throw error;}
+});
+app.get('/api/v1/billing/subscription',authenticate,async(req,res)=>{
+ const agency=await resolveActiveAgency(req,res);if(!agency)return;
+ if(!['owner','admin'].includes(agency.role))return res.status(403).json({error:{code:'FORBIDDEN',message:'Agency owner or admin permission is required to view billing'}});
+ try{
+  const [subscription,payments]=await Promise.all([subscriptionRepository.getCurrent(agency.id),subscriptionRepository.listPayments(agency.id)]);
+  return res.json({data:{subscription,payments}});
+ }catch(error){if(error instanceof Error&&error.message==='PERSISTENCE_REQUIRED')return res.status(503).json({error:{code:'PERSISTENCE_REQUIRED',message:'Billing records require PostgreSQL persistence'}});throw error;}
 });
 app.get('/api/v1/agencies/properties',authenticate,async(req,res)=>{
  const agency=await resolveActiveAgency(req,res);if(!agency)return;
