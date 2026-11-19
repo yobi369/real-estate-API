@@ -54,9 +54,13 @@ describe('subscription payment lifecycle',()=>{
   const otherCheckout='checkout-'+randomUUID();
   await payments.attachCheckout(otherAttempt.payment.id,'merchant-'+randomUUID(),otherCheckout);
   const rejected=await payments.processCallback({checkoutRequestId:otherCheckout,resultCode:0,resultDescription:'Success',amount:2499,receipt:'R'+randomUUID().replaceAll('-','').slice(0,10),payload:{Body:{stkCallback:{ResultCode:0}}}});
-  expect(rejected.status).toBe('failed');
+  expect(rejected.status).toBe('pending');
   const noSubscription=await pool.query('SELECT id FROM agency_subscriptions WHERE agency_id=$1',[otherAgency.body.data.id]);
   expect(noSubscription.rows).toHaveLength(0);
+  const mismatchReconciled=await payments.processQuery({agencyId:otherAgency.body.data.id,paymentId:otherAttempt.payment.id,resultCode:0,resultDescription:'Confirmed by Daraja status query',payload:{ResultCode:0}});
+  expect(mismatchReconciled.status).toBe('succeeded');
+  const recoveredSubscription=await pool.query('SELECT id FROM agency_subscriptions WHERE agency_id=$1',[otherAgency.body.data.id]);
+  expect(recoveredSubscription.rows).toHaveLength(1);
   const thirdOwner=await register('billing-query-owner@example.com');
   const thirdAgency=await request(app).post('/api/v1/agencies').set('Authorization','Bearer '+thirdOwner).send({name:'Query Reconciliation Agency'});
   const thirdAttempt=await payments.createAttempt(thirdAgency.body.data.id,plan!,'254712345678','billing-idempotency-key-0004');
