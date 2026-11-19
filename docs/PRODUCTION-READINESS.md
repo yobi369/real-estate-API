@@ -10,7 +10,8 @@ This checklist separates implemented controls from external or incomplete releas
 - [x] Scrypt password hashing, expiring HMAC-signed bearer tokens, and secret-protected first-admin bootstrap.
 - [x] Agency onboarding, active membership context resolution, agency-scoped listing writes and private inventory reads, publication lifecycle, scoped enquiry inbox, and owner/admin membership administration with cross-agency isolation and owner protection.
 - [x] Authenticated agency console for inventory, enquiries, and team operations.
-- [x] Subscription-plan catalog, agency subscription state, and payment ledger schema with owner/admin-only billing summary APIs. Pricing activation and live payment collection are not configured.
+- [x] Subscription-plan catalog, agency subscription state, and payment ledger schema with owner/admin-only billing summary APIs.
+- [x] Daraja STK Push adapter, PayBill/Till transaction modes, idempotency controls, callback-path secret, callback amount/receipt matching, and transactional subscription activation. Sandbox credentials and an end-to-end provider test are still outstanding.
 - [x] Public reads restricted to published listings; public responses omit owner and agency identifiers.
 - [x] Input validation, Helmet, configured CORS, request IDs, redacted sensitive headers, and bounded JSON body parsing.
 - [x] Process-local rate limits for bootstrap, registration, login, public search/demo, and enquiries; limits are not distributed.
