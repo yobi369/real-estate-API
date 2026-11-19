@@ -13,7 +13,7 @@ done
 mkdir -p "$BACKUP_DIR"
 chmod 700 "$BACKUP_DIR"
 
-timestamp="$(date -u +%Y%m%dT%H%M%SZ)-$"
+timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
 output="$BACKUP_DIR/real-estate-api-$timestamp.dump.age"
 temporary="$(mktemp "$BACKUP_DIR/.real-estate-api-$timestamp.XXXXXX")"
 trap 'rm -f "$temporary"' EXIT
