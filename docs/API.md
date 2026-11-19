@@ -20,7 +20,7 @@ Owner identity is derived from the verified token. `GET /api/v1/properties/{id}`
 
 ## Customer enquiries
 `POST /api/v1/inquiries` stores contact messages, property viewing requests, short-stay booking requests, and land site-visit requests. It accepts requestType (`general`, `booking`, `viewing`, or `site_visit`), name, email, phone, message, and optional service/listing/date/guest/pickup details. A success response is returned only after the repository has stored the enquiry.
-`POST /api/v1/inquiries` is rate-limited to 10 submissions per client IP per 15 minutes per API process. `GET /api/v1/inquiries` returns the latest 100 enquiries and requires an admin bearer token. Standard registered users receive 403.
+`POST /api/v1/inquiries` is rate-limited to 10 submissions per client IP per 15 minutes per API process. Authentication bootstrap is limited to 5 requests per 15 minutes, registration and login to 10 each per 15 minutes, and public property/demo searches to 120 per minute. These limits are process-local; use a shared limiter or edge/WAF enforcement for multi-instance deployments. `GET /api/v1/inquiries` returns the latest 100 enquiries and requires an admin bearer token. Standard registered users receive 403.
 
 ## First administrator setup
 Set a temporary `ADMIN_BOOTSTRAP_TOKEN` (at least 32 characters) in the API host's secret environment. Call `POST /api/v1/admin/bootstrap` with the `x-bootstrap-token` header and the chosen administrator email/password. The endpoint is disabled without the secret and returns 409 after an administrator exists. Remove the bootstrap token from the host after creating the first administrator.
@@ -32,3 +32,7 @@ Set a temporary `ADMIN_BOOTSTRAP_TOKEN` (at least 32 characters) in the API host
 - `GET /docs/`
 
 Production requires PostgreSQL, a unique `JWT_SECRET`, and a `CORS_ORIGIN` allowlist containing the website origin. The bootstrap token is only needed for initial administrator creation and should then be removed.
+
+## Performance testing
+
+Use `npm run benchmark` against a running local or staging API. Configure `API_BASE_URL`, `BENCHMARK_PATH`, `BENCHMARK_REQUESTS`, and `BENCHMARK_CONCURRENCY`; optional error-rate and p95 thresholds are documented in [BENCHMARKING.md](BENCHMARKING.md). Benchmark output is environment-specific and is not a production capacity guarantee.
