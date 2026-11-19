@@ -211,6 +211,7 @@ app.post('/api/v1/agencies/ownership-transfer',authenticate,async(req,res)=>{
  }catch(error){
   if(error instanceof Error&&error.message==='PERSISTENCE_REQUIRED')return res.status(503).json({error:{code:'PERSISTENCE_REQUIRED',message:'Ownership transfer requires PostgreSQL persistence'}});
   if(error instanceof Error&&error.message==='ACTOR_NOT_OWNER')return res.status(403).json({error:{code:'OWNER_REQUIRED',message:'Only the current agency owner can initiate an ownership transfer'}});
+  if(error instanceof Error&&error.message==='AGENCY_INACTIVE')return res.status(409).json({error:{code:'AGENCY_INACTIVE',message:'Ownership transfer is unavailable for an inactive agency'}});
   if(error instanceof Error&&error.message==='TARGET_NOT_ACTIVE_ADMIN')return res.status(409).json({error:{code:'TARGET_NOT_ACTIVE_ADMIN',message:'The recipient must be an active admin in this agency'}});
   if(error instanceof Error&&error.message==='TRANSFER_TO_SELF')return res.status(400).json({error:{code:'TRANSFER_TO_SELF',message:'Ownership cannot be transferred to the current owner'}});
   throw error;
