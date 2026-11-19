@@ -57,10 +57,32 @@ M-Pesa amounts are whole KES. The checkout endpoint rejects plan prices that are
 
 If the network fails after the STK request may have reached Safaricom but before a checkout ID is received, the payment remains in an ambiguous initiated state and blocks another attempt. This intentionally avoids duplicate charges; support must reconcile that case against the Daraja portal before releasing it.
 
+## Sandbox acceptance matrix
+
+Run these cases against a dedicated sandbox deployment and Daraja sandbox app. Use test agencies and non-customer data. Record the UTC timestamp, app commit, Daraja environment, payment ID, checkout request ID (where returned), expected outcome, observed outcome, and sanitized evidence. Never record consumer secrets, passkeys, callback secrets, full phone numbers, or bearer tokens.
+
+| Case | Test action | Required result |
+|---|---|---|
+| Successful payment | Complete the STK prompt using a Safaricom-provided sandbox test number | Payment succeeds only after a valid callback or status query; one subscription period is activated |
+| User cancellation | Cancel or decline the STK prompt | No subscription activation; payment is recorded as failed/cancelled according to the provider result |
+| Invalid phone | Submit malformed or unsupported phone input | Rejected before Daraja is called; no payment attempt or subscription is created |
+| Invalid credentials | Use intentionally invalid sandbox credentials in an isolated deployment | OAuth failure is surfaced safely; no subscription activation |
+| Provider rejection | Trigger a documented Daraja STK rejection | Attempt is marked failed; retry requires a new idempotency key |
+| Callback amount mismatch | Deliver a callback with an amount different from the stored checkout | Payment is not activated; mismatch is retained for investigation |
+| Duplicate callback | Replay the same successful callback | No duplicate subscription or extension of the paid period |
+| Missing callback | Complete payment but withhold callback delivery | Subscription remains pending until a successful status query confirms payment |
+| Pending status query | Query while Safaricom reports processing | Payment remains pending; no activation |
+| Successful status query | Reconcile a confirmed payment without callback | Exactly one subscription period is activated |
+| Late callback after query | Deliver the matching callback after query reconciliation | No second activation; receipt may be enriched if verified |
+| Ambiguous network outcome | Simulate connection loss after the STK request may have reached the provider | Attempt remains locked for reconciliation; no automatic duplicate STK request |
+| Duplicate idempotency key | Repeat the same agency checkout request with the same key | Existing attempt is returned; a second charge is not initiated |
+
+The automated repository tests cover payment-ledger callback/query idempotency and subscription activation logic using controlled test data. They do not replace the external Daraja sandbox matrix above.
+
 ## Production acceptance
 
 Before enabling live checkout:
-- Complete Daraja sandbox tests for success, user cancellation, timeout, invalid phone, amount mismatch, duplicate callback, missing callback, status-query reconciliation, and network ambiguity.
+- Complete and retain evidence for every applicable Daraja sandbox case above, including callback delivery from Safaricom's external environment.
 - Confirm the PayBill shortcode and passkey belong to the platform operator and are approved for the intended use.
 - Complete Safaricom Go-Live and obtain production credentials.
 - Store credentials only in managed secrets; never in GitHub, source code, logs, or chat.
