@@ -82,11 +82,11 @@ describe('subscription billing foundation',()=>{
  it('seeds the approved KES monthly plans as inactive until quotas are approved',async()=>{
   if(!pool)return;
   await migrate();
-  const plans=await pool.query<{code:string;price_minor:string;billing_interval:string;is_active:boolean}>('SELECT code,price_minor,billing_interval,is_active FROM subscription_plans ORDER BY price_minor');
+  const plans=await pool.query<{code:string;price_minor:string;billing_interval:string;is_active:boolean}>('SELECT code,price_minor,billing_interval,max_listings,max_members,is_active FROM subscription_plans ORDER BY price_minor');
   expect(plans.rows).toEqual([
-   {code:'starter',price_minor:'250000',billing_interval:'month',is_active:false},
-   {code:'professional',price_minor:'500000',billing_interval:'month',is_active:false},
-   {code:'business',price_minor:'1200000',billing_interval:'month',is_active:false}
+   {code:'starter',price_minor:'250000',billing_interval:'month',max_listings:25,max_members:3,is_active:false},
+   {code:'professional',price_minor:'500000',billing_interval:'month',max_listings:100,max_members:10,is_active:false},
+   {code:'business',price_minor:'1200000',billing_interval:'month',max_listings:500,max_members:30,is_active:false}
   ]);
  });
 
