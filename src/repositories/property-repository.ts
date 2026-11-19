@@ -32,6 +32,23 @@ export class PropertyRepository{
   const needle=q.search?.toLocaleLowerCase();const matches=[...memory.values()].filter(p=>p.publicationStatus==='published'&&(!q.city||p.city.toLocaleLowerCase()===q.city.toLocaleLowerCase())&&(!q.category||p.category===q.category)&&(!q.propertyType||p.propertyType===q.propertyType)&&(!q.transactionType||p.transactionType===q.transactionType)&&(q.minPrice===undefined||p.price>=q.minPrice)&&(q.maxPrice===undefined||p.price<=q.maxPrice)&&(!needle||`${p.title} ${p.description} ${p.city} ${p.location}`.toLocaleLowerCase().includes(needle))).sort((a,b)=>Number(b.featured)-Number(a.featured)||b.createdAt.localeCompare(a.createdAt));
   const start=(q.page-1)*q.limit;return {items:matches.slice(start,start+q.limit),total:matches.length,page:q.page,limit:q.limit};
  }
+ async listForAgency(agencyId:string,q:PropertyQuery):Promise<{items:StoredProperty[];total:number;page:number;limit:number}>{
+  if(pool){
+   const clauses:string[]=['agency_id=$1'];const values:unknown[]=[agencyId];
+   const add=(sql:string,v:unknown)=>{values.push(v);clauses.push(sql.replace('?',`${values.length}`));};
+   if(q.city)add('lower(city)=lower(?)',q.city);if(q.category)add('category=?',q.category);
+   if(q.propertyType)add('property_type=?',q.propertyType);if(q.transactionType)add('transaction_type=?',q.transactionType);
+   if(q.minPrice!==undefined)add('price>=?',q.minPrice);if(q.maxPrice!==undefined)add('price<=?',q.maxPrice);
+   if(q.search){values.push(`%${q.search}%`);const p=`${values.length}`;clauses.push(`(title ILIKE ${p} OR description ILIKE ${p} OR city ILIKE ${p} OR location ILIKE ${p})`);}
+   const where=`WHERE ${clauses.join(' AND ')}`;
+   const count=await pool.query<{count:string}>(`SELECT count(*)::text AS count FROM properties ${where}`,values);
+   const rows=await pool.query(`SELECT * FROM properties ${where} ORDER BY featured DESC,created_at DESC LIMIT ${values.length+1} OFFSET ${values.length+2}`,[...values,q.limit,(q.page-1)*q.limit]);
+   return {items:rows.rows.map(fromRow),total:Number(count.rows[0]?.count??0),page:q.page,limit:q.limit};
+  }
+  const needle=q.search?.toLocaleLowerCase();
+  const matches=[...memory.values()].filter(p=>p.agencyId===agencyId&&(!q.city||p.city.toLocaleLowerCase()===q.city.toLocaleLowerCase())&&(!q.category||p.category===q.category)&&(!q.propertyType||p.propertyType===q.propertyType)&&(!q.transactionType||p.transactionType===q.transactionType)&&(q.minPrice===undefined||p.price>=q.minPrice)&&(q.maxPrice===undefined||p.price<=q.maxPrice)&&(!needle||`${p.title} ${p.description} ${p.city} ${p.location}`.toLocaleLowerCase().includes(needle))).sort((a,b)=>Number(b.featured)-Number(a.featured)||b.createdAt.localeCompare(a.createdAt));
+  const start=(q.page-1)*q.limit;return {items:matches.slice(start,start+q.limit),total:matches.length,page:q.page,limit:q.limit};
+ }
  async getById(id:string,agencyId?:string):Promise<StoredProperty|undefined>{if(!UUID_RE.test(id))return undefined;if(pool){const r=await pool.query(`SELECT * FROM properties WHERE id=$1${agencyId?' AND agency_id=$2':' AND publication_status=\'published\''}` ,agencyId?[id,agencyId]:[id]);return r.rows[0]?fromRow(r.rows[0]):undefined;}const item=memory.get(id);return item&&(!agencyId?(item.publicationStatus==='published'):item.agencyId===agencyId)?item:undefined;}
  async create(input:PropertyInput,ownerId:string,agencyId?:string):Promise<StoredProperty>{
   const normalized={...input,slug:input.slug||slugify(input.title),location:input.location||input.city,address:input.address||input.location||input.city};
