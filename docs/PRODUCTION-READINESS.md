@@ -51,7 +51,8 @@ This checklist separates implemented controls from external or incomplete releas
 - [ ] Verify live health/readiness, OpenAPI, and critical API flows after deployment.
 
 ### Commercial billing and API monetization
-- [ ] Approve final KES plan pricing, billing intervals, listing/member/API quotas, trial policy, grace period, and refund/cancellation terms; activate only approved plans.
+- [ ] [x] Confirmed initial monthly KES prices: Starter KSh 2,500; Professional KSh 5,000; Business KSh 12,000. Plans are seeded inactive.
+- [ ] Approve listing/member/API quotas, trial policy, grace period, and refund/cancellation terms; enforce quotas before activating plans.
 - [ ] Enforce plan limits on listing creation, team seats, and API consumption before accepting paid customers.
 - [ ] Verify Daraja sandbox and production acceptance gates in [M-Pesa integration](MPESA-INTEGRATION.md); configure credentials only in the managed secret store.
 - [ ] Build API-key issuance/revocation, developer accounts, usage metering, per-plan quotas, and paid API access as the second commercial product.
