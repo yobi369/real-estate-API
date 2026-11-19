@@ -45,6 +45,18 @@ The pilot is limited to one integration, one agreed environment and the acceptan
 
 This is an initial indicative offer, not a binding quotation. Final pricing depends on the client's existing technology, data quality, access requirements and acceptance criteria.
 
+## Secure Properties SaaS subscription options
+
+The agency workspace is planned as a separate recurring product. The initial monthly prices have been approved:
+
+| Plan | Monthly price |
+|---|---:|
+| Starter | KSh 2,500 |
+| Professional | KSh 5,000 |
+| Business | KSh 12,000 |
+
+These are subscription prices, not the one-time integration pilot fee above. Listing and team-seat quotas, API access, support response times, taxes, and any onboarding fees must be agreed in the order form before a plan is activated. The seeded application plans remain inactive until those limits and the M-Pesa acceptance tests are complete.
+
 ## Security, data and ownership
 
 - Client production data will not be placed in the public demonstration environment.
