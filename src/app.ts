@@ -11,6 +11,7 @@ import { inquiryInputSchema } from './domain/inquiry.js';
 import { PropertyRepository, type StoredProperty } from './repositories/property-repository.js';
 import { InquiryRepository } from './repositories/inquiry-repository.js';
 import { AgencyRepository } from './repositories/agency-repository.js';
+import { AgencyInvitationRepository, type InvitationRole } from './repositories/agency-invitation-repository.js';
 import { z } from 'zod';
 import { demoProperties } from './demo-data.js';
 import { pool } from './db.js';
@@ -23,6 +24,9 @@ export const app=express();
 export const propertyRepository=new PropertyRepository();
 export const inquiryRepository=new InquiryRepository();
 export const agencyRepository=new AgencyRepository();
+export const agencyInvitationRepository=new AgencyInvitationRepository();
+const invitationCreateSchema=z.object({email:z.string().trim().email().max(254).transform(v=>v.toLowerCase()),role:z.enum(['admin','agent','viewer'])}).strict();
+const invitationAcceptSchema=z.object({token:z.string().min(32).max(128)}).strict();
 const agencyCreateSchema=z.object({name:z.string().trim().min(2).max(160)}).strict();
 const resolveActiveAgency=async(req:express.Request,res:express.Response):Promise<{id:string;role:'owner'|'admin'|'agent'|'viewer'}|null>=>{
  const agencyId=req.header('x-agency-id');
@@ -101,6 +105,46 @@ app.get('/api/v1/agencies/me',authenticate,async(req,res)=>{
  try{return res.json({data:{items:await agencyRepository.listForUser(req.principal!.id)}});}
  catch(error){
   if(error instanceof Error&&error.message==='PERSISTENCE_REQUIRED')return res.status(503).json({error:{code:'PERSISTENCE_REQUIRED',message:'Agency workspaces require PostgreSQL persistence'}});
+  throw error;
+ }
+});
+app.post('/api/v1/agencies/invitations',authenticate,async(req,res)=>{
+ const agency=await resolveActiveAgency(req,res);if(!agency)return;
+ if(!['owner','admin'].includes(agency.role))return res.status(403).json({error:{code:'FORBIDDEN',message:'Agency owner or admin permission is required'}});
+ const parsed=invitationCreateSchema.safeParse(req.body);
+ if(!parsed.success)return res.status(400).json({error:{code:'VALIDATION_ERROR',message:'Invitation email or role is invalid'}});
+ try{
+  const created=await agencyInvitationRepository.create(agency.id,req.principal!.id,parsed.data.email,parsed.data.role as InvitationRole);
+  return res.status(201).json({data:{...created.invitation,token:created.token,delivery:'manual'}});
+ }catch(error){
+  if(error instanceof Error&&error.message==='PERSISTENCE_REQUIRED')return res.status(503).json({error:{code:'PERSISTENCE_REQUIRED',message:'Agency invitations require PostgreSQL persistence'}});
+  if(error instanceof Error&&error.message==='INVITATION_ALREADY_PENDING')return res.status(409).json({error:{code:'INVITATION_ALREADY_PENDING',message:'An active invitation already exists for this email'}});
+  throw error;
+ }
+});
+app.post('/api/v1/agencies/invitations/accept',authenticate,async(req,res)=>{
+ const parsed=invitationAcceptSchema.safeParse(req.body);
+ if(!parsed.success)return res.status(400).json({error:{code:'VALIDATION_ERROR',message:'A valid invitation token is required'}});
+ try{
+  const membership=await agencyInvitationRepository.accept(parsed.data.token,req.principal!.id,req.principal!.email);
+  return res.status(200).json({data:membership});
+ }catch(error){
+  if(error instanceof Error&&error.message==='PERSISTENCE_REQUIRED')return res.status(503).json({error:{code:'PERSISTENCE_REQUIRED',message:'Agency invitations require PostgreSQL persistence'}});
+  if(error instanceof Error&&error.message==='INVITATION_EMAIL_MISMATCH')return res.status(403).json({error:{code:'INVITATION_EMAIL_MISMATCH',message:'Sign in with the email address this invitation was sent to'}});
+  if(error instanceof Error&&error.message==='INVITATION_INVALID')return res.status(400).json({error:{code:'INVITATION_INVALID',message:'Invitation is invalid, expired, revoked, or already accepted'}});
+  throw error;
+ }
+});
+app.delete('/api/v1/agencies/invitations/:id',authenticate,async(req,res)=>{
+ const agency=await resolveActiveAgency(req,res);if(!agency)return;
+ if(!['owner','admin'].includes(agency.role))return res.status(403).json({error:{code:'FORBIDDEN',message:'Agency owner or admin permission is required'}});
+ const id=String(req.params.id);
+ if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id))return res.status(404).json({error:{code:'INVITATION_NOT_FOUND',message:'Invitation was not found'}});
+ try{
+  const revoked=await agencyInvitationRepository.revoke(agency.id,id,req.principal!.id);
+  return revoked?res.status(204).end():res.status(404).json({error:{code:'INVITATION_NOT_FOUND',message:'Pending invitation was not found in this agency'}});
+ }catch(error){
+  if(error instanceof Error&&error.message==='PERSISTENCE_REQUIRED')return res.status(503).json({error:{code:'PERSISTENCE_REQUIRED',message:'Agency invitations require PostgreSQL persistence'}});
   throw error;
  }
 });
