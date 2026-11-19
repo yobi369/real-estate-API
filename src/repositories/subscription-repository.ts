@@ -30,7 +30,7 @@ export class SubscriptionRepository {
  }
  async getCurrent(agencyId:string):Promise<CurrentSubscription|null>{
   if(!pool)throw new Error('PERSISTENCE_REQUIRED');
-  await pool.query(\"UPDATE agency_subscriptions SET status='expired',updated_at=now() WHERE agency_id=$1 AND status IN ('active','trialing') AND current_period_end<=now()\",[agencyId]);
+  await pool.query(`UPDATE agency_subscriptions SET status='expired',updated_at=now() WHERE agency_id=$1 AND status IN ('active','trialing') AND current_period_end<=now()`,[agencyId]);
   const result=await pool.query(
    `SELECT s.id,s.status,s.provider,s.current_period_start,s.current_period_end,s.cancel_at_period_end,p.*
     FROM agency_subscriptions s JOIN subscription_plans p ON p.id=s.plan_id
@@ -48,7 +48,7 @@ export class SubscriptionRepository {
  }
  async scheduleCancellation(agencyId:string):Promise<boolean>{
   if(!pool)throw new Error('PERSISTENCE_REQUIRED');
-  const result=await pool.query(\"UPDATE agency_subscriptions SET cancel_at_period_end=true,updated_at=now() WHERE agency_id=$1 AND status IN ('active','trialing') AND current_period_end>now() RETURNING id\",[agencyId]);
+  const result=await pool.query(`UPDATE agency_subscriptions SET cancel_at_period_end=true,updated_at=now() WHERE agency_id=$1 AND status IN ('active','trialing') AND current_period_end>now() RETURNING id`,[agencyId]);
   return result.rowCount===1;
  }
  async listPayments(agencyId:string,limit=20):Promise<PaymentSummary[]>{
