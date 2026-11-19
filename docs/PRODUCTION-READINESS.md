@@ -15,6 +15,7 @@ This checklist separates implemented controls from external or incomplete releas
 - [x] Security regression tests for headers, auth throttling, oversized JSON payload handling, enquiry routing, invitation lifecycle, agency membership authorization/auditing, and two-step ownership transfer. CI evidence is recorded in the latest workflow run.
 - [x] Dependency-free HTTP benchmark runner and documented evidence procedure; no production capacity claim has been established.
 - [x] CI workflow audits production dependencies and runs typecheck, tests, build, and lint on Node 22/24 with PostgreSQL 16.
+- [x] Encrypted PostgreSQL logical-backup and guarded empty-target restore scripts are available in `scripts/backup-postgres.sh` and `scripts/restore-postgres.sh`; see [PostgreSQL operations](POSTGRES-OPERATIONS.md). Tooling availability is not evidence of a completed backup or restore drill.
 
 ## Required before customer production launch
 
@@ -22,9 +23,10 @@ This checklist separates implemented controls from external or incomplete releas
 - [ ] Provision dedicated production PostgreSQL and a least-privilege DB role.
 - [ ] Verify TLS settings for service and database connections in the target host.
 - [ ] Store a unique JWT secret and deployment credentials in a managed secret store.
-- [ ] Configure automated backups/retention and complete a restore drill.
-- [ ] Define controlled migration execution, rollback, and deployment ownership.
+- [ ] Configure automated provider backups/retention and complete an independent encrypted off-host backup plus a restore drill.
+- [ ] Define controlled migration execution, rollback, and deployment ownership. Move DDL/backfill out of application startup before enforcing a least-privilege runtime role.
 - [ ] Configure CORS to the customer's approved origins and verify proxy trust settings.
+- [ ] Confirm the production service plan, availability characteristics, health checks, monitoring, and capacity are suitable for the agreed customer SLA.
 
 ### Identity and application security
 - [ ] Replace process-local rate limits with shared/distributed enforcement or an edge/WAF equivalent before scaling horizontally.
