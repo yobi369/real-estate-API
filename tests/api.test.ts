@@ -7,7 +7,8 @@ import {migrate,pool} from '../src/db.js';
 import {PropertyRepository} from '../src/repositories/property-repository.js';
 const sample={title:'Coastal family home',description:'Bright home near local amenities.',price:12500000,currency:'KES',propertyType:'house',transactionType:'sale',bedrooms:3,bathrooms:2,city:'Mombasa',country:'Kenya',imageUrls:[]};
 const account=(email:string)=>({email,password:'StrongPassword123'});
-async function register(email:string){const r=await request(app).post('/api/v1/auth/register').send(account(email));expect(r.status).toBe(201);return r.body.data.token as string;}
+let registerRequestNumber=0;
+async function register(email:string){const r=await request(app).post('/api/v1/auth/register').set('X-Forwarded-For',`198.51.100.${++registerRequestNumber}`).send(account(email));expect(r.status).toBe(201);return r.body.data.token as string;}
 let bootstrapRequestNumber=0;
 async function bootstrap(email:string){const r=await request(app).post('/api/v1/admin/bootstrap').set('x-bootstrap-token',config.ADMIN_BOOTSTRAP_TOKEN ?? '').set('X-Forwarded-For',`192.0.2.${++bootstrapRequestNumber}`).send(account(email));expect(r.status).toBe(201);return r.body.data.token as string;}
 async function agencyId(token:string){const r=await request(app).get('/api/v1/agencies/me').set('Authorization',`Bearer ${token}`);expect(r.status).toBe(200);expect(r.body.data.items.length).toBeGreaterThan(0);return r.body.data.items[0].id as string;}
