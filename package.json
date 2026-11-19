@@ -16,6 +16,7 @@
     "test": "vitest run --no-file-parallelism",
     "lint": "eslint .",
     "verify": "npm run typecheck && npm test && npm run build && npm run lint",
+    "db:migrate": "npm run build && node dist/src/migrate.js",
     "benchmark": "node scripts/benchmark.mjs"
   },
   "dependencies": {
