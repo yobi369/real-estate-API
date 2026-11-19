@@ -1,6 +1,6 @@
 const $ = (selector, root=document) => root.querySelector(selector);
 const $$ = (selector, root=document) => [...root.querySelectorAll(selector)];
-const state = { token: sessionStorage.getItem('sp_token') || '', agencies: [], agency: null, listings: [], enquiries: [], members: [], register: false, view: 'overview' };
+const state = { token: sessionStorage.getItem('sp_token') || '', agencies: [], agency: null, listings: [], enquiries: [], members: [], plans: [], subscription: null, payments: [], register: false, view: 'overview' };
 const money = new Intl.NumberFormat('en-KE', {maximumFractionDigits:0});
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const api = async (path, options={}) => {
@@ -38,6 +38,7 @@ async function loadWorkspace() {
   $('#workspace-message').textContent=`${state.agency.name} · ${state.agency.role}`;
   await Promise.all([loadListings(),loadEnquiries()]);
   if(['owner','admin'].includes(state.agency.role)) await loadTeam();
+  $('.nav-item[data-view="billing"]').classList.toggle('hidden',!['owner','admin'].includes(state.agency.role));
   show(state.view);
 }
 async function loadListings() {
@@ -71,6 +72,20 @@ async function loadTeam() {
   try { const result=await api('/api/v1/agencies/members'); state.members=result.data.items||[]; renderTeam(); $('#invite-card').classList.remove('hidden'); }
   catch(error){ $('#team-list').innerHTML=`<p class="empty">${esc(error.message)}</p>`; $('#invite-card').classList.add('hidden'); }
 }
+async function loadBilling() {
+  if(!['owner','admin'].includes(state.agency.role))return;
+  try {
+    const [plans,summary]=await Promise.all([api('/api/v1/billing/plans'),api('/api/v1/billing/subscription')]);
+    state.plans=plans.data.items||[];state.subscription=summary.data.subscription;state.payments=summary.data.payments||[];
+    $('#billing-plan').innerHTML=state.plans.map(p=>'<option value="'+esc(p.code)+'">'+esc(p.name)+' · KES '+money.format(p.priceMinor/100)+' / '+esc(p.billingInterval)+'</option>').join('')||'<option value="">No active plans</option>';
+    $('#billing-submit').disabled=!state.plans.length;
+    $('#billing-plan-help').textContent=state.plans.length?'Payment is confirmed only after the verified Daraja callback. An accepted STK prompt is not proof of payment.':'No active subscription plans are configured yet. Pricing must be approved before customers can subscribe.';
+    const s=state.subscription;
+    $('#billing-current-summary').textContent=s?s.plan.name+' · '+s.status+' · KES '+money.format(s.plan.priceMinor/100)+' per '+s.plan.billingInterval+(s.currentPeriodEnd?' · Period ends '+new Date(s.currentPeriodEnd).toLocaleDateString():'')+(s.cancelAtPeriodEnd?' · Cancellation scheduled at period end':''):'No active subscription for this agency.';
+    $('#cancel-subscription').classList.toggle('hidden',!s||s.cancelAtPeriodEnd||!['active','trialing'].includes(s.status));
+    $('#billing-payments').innerHTML=state.payments.map(p=>'<div class="table-row"><strong>'+esc(p.provider.toUpperCase())+' · '+esc(p.status)+'</strong><span>KES '+money.format(p.amountMinor/100)+'</span><span>'+esc(p.mpesaReceiptNumber||'—')+'</span><span>'+new Date(p.createdAt).toLocaleDateString()+'</span></div>').join('')||'<p class="empty">No payment transactions yet.</p>';
+  } catch(error) { message('#billing-message',error.message,'error'); }
+}
 function renderTeam() {
   $('#team-list').innerHTML=state.members.map(m=>`<div class="table-row team-row"><div><strong>${esc(m.email)}</strong><small>${esc(m.status)}</small></div><span class="pill">${esc(m.role)}</span><div class="team-controls">${m.role==='owner'?'':`<select data-member-role="${esc(m.userId)}"><option value="admin" ${m.role==='admin'?'selected':''}>Admin</option><option value="agent" ${m.role==='agent'?'selected':''}>Agent</option><option value="viewer" ${m.role==='viewer'?'selected':''}>Viewer</option></select><button class="quiet" data-remove-member="${esc(m.userId)}">Remove</button>`}</div></div>`).join('')||'<p class="empty">No team members found.</p>';
 }
@@ -83,7 +98,7 @@ $('#auth-switch').addEventListener('click',()=>setAuthMode(!state.register));
 $('#sign-out').addEventListener('click',()=>{sessionStorage.removeItem('sp_token');sessionStorage.removeItem('sp_agency');state.token='';state.agency=null;$('#workspace-view').classList.add('hidden');$('#sign-out').classList.add('hidden');$('#auth-view').classList.remove('hidden');setAuthMode(false);});
 $('#agency-form').addEventListener('submit',async event=>{event.preventDefault();const name=String(new FormData(event.currentTarget).get('name')).trim();try{await api('/api/v1/agencies',{method:'POST',body:JSON.stringify({name})});await startWorkspace();}catch(error){message('#agency-message',error.message,'error');}});
 $('#agency-select').addEventListener('change',async event=>{state.agency=state.agencies.find(a=>a.id===event.target.value)||null;state.view='overview';try{await loadWorkspace();}catch(error){message('#workspace-message',error.message,'error');}});
-$$('.nav-item').forEach(button=>button.addEventListener('click',()=>{show(button.dataset.view);if(button.dataset.view==='enquiries')loadEnquiries();if(button.dataset.view==='team')loadTeam();}));
+$('.nav-item').forEach(button=>button.addEventListener('click',()=>{show(button.dataset.view);if(button.dataset.view==='enquiries')loadEnquiries();if(button.dataset.view==='team')loadTeam();if(button.dataset.view==='billing')loadBilling();}));
 $$('[data-go]').forEach(button=>button.addEventListener('click',()=>show(button.dataset.go)));
 $('#show-listing-form').addEventListener('click',()=>$('#listing-form').classList.remove('hidden'));
 $('#hide-listing-form').addEventListener('click',()=>$('#listing-form').classList.add('hidden'));
@@ -96,6 +111,14 @@ $('#listing-form').addEventListener('submit',async event=>{
 $('#listing-search').addEventListener('input',renderListings);$('#listing-status').addEventListener('change',renderListings);
 $('#listing-list').addEventListener('click',async event=>{const button=event.target.closest('[data-status]');if(!button)return;try{await api(`/api/v1/properties/${encodeURIComponent(button.dataset.id)}/publication`,{method:'PATCH',body:JSON.stringify({status:button.dataset.status})});await loadListings();}catch(error){message('#workspace-message',error.message,'error');}});
 $('#refresh-enquiries').addEventListener('click',loadEnquiries);$('#refresh-team').addEventListener('click',loadTeam);
+$('#refresh-billing').addEventListener('click',loadBilling);
+$('#billing-checkout').addEventListener('submit',async event=>{
+ event.preventDefault();const data=new FormData(event.currentTarget);
+ try{const result=await api('/api/v1/billing/mpesa/stk-push',{method:'POST',headers:{'Idempotency-Key':crypto.randomUUID()},body:JSON.stringify({planCode:String(data.get('planCode')),phoneNumber:String(data.get('phoneNumber')).trim()})});message('#billing-message',result.data.customerMessage+' Payment is pending until Safaricom confirms it.','success');await loadBilling();}
+ catch(error){message('#billing-message',error.message,'error');}
+});
+$('#cancel-subscription').addEventListener('click',async()=>{if(!confirm('Schedule cancellation at the end of the current billing period?'))return;try{await api('/api/v1/billing/subscription/cancel',{method:'POST',body:JSON.stringify({})});await loadBilling();message('#billing-message','Cancellation scheduled at period end.','success');}catch(error){message('#billing-message',error.message,'error');}});
+
 $('#invite-form').addEventListener('submit',async event=>{event.preventDefault();const data=new FormData(event.currentTarget);try{const result=await api('/api/v1/agencies/invitations',{method:'POST',body:JSON.stringify({email:String(data.get('email')).trim(),role:String(data.get('role'))})});$('#invite-result').textContent=`Invitation token (copy and deliver securely): ${result.data.token} · Expires ${new Date(result.data.expiresAt).toLocaleString()}`;$('#invite-result').className='notice success';event.currentTarget.reset();await loadTeam();}catch(error){message('#invite-result',error.message,'error');}});
 $('#team-list').addEventListener('change',async event=>{const userId=event.target.dataset.memberRole;if(!userId)return;try{await api(`/api/v1/agencies/members/${encodeURIComponent(userId)}`,{method:'PATCH',body:JSON.stringify({role:event.target.value})});await loadTeam();}catch(error){message('#workspace-message',error.message,'error');await loadTeam();}});
 $('#team-list').addEventListener('click',async event=>{const button=event.target.closest('[data-remove-member]');if(!button)return;if(!confirm('Remove this person from the agency?'))return;try{await api(`/api/v1/agencies/members/${encodeURIComponent(button.dataset.removeMember)}`,{method:'DELETE'});await loadTeam();}catch(error){message('#workspace-message',error.message,'error');}});
