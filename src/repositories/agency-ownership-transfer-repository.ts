@@ -13,7 +13,8 @@ export class AgencyOwnershipTransferRepository {
     const id = randomUUID();
     try {
       await client.query('BEGIN');
-      await client.query('SELECT id FROM agencies WHERE id=$1 AND status=\'active\' FOR UPDATE', [agencyId]);
+      const agency = await client.query('SELECT id FROM agencies WHERE id=$1 AND status=\'active\' FOR UPDATE', [agencyId]);
+      if (!agency.rows[0]) throw new Error('AGENCY_INACTIVE');
       const actor = await client.query<{ role: AgencyRole }>(
         "SELECT role FROM agency_memberships WHERE agency_id=$1 AND user_id=$2 AND status='active' FOR UPDATE",
         [agencyId, actorId]
