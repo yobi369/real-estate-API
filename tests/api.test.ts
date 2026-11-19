@@ -124,3 +124,68 @@ describe('agency invitation security',()=>{
   expect(audit.rows.map(row=>row.action).sort()).toEqual(['agency.invitation.created','agency.invitation.revoked']);
  });
 });
+
+
+describe('agency membership administration',()=>{
+  async function invite(owner:string,agency:string,email:string,role:'admin'|'agent'|'viewer'){
+    const recipient=await register(email);
+    const created=await request(app).post('/api/v1/agencies/invitations')
+      .set('Authorization',`Bearer ${owner}`).set('X-Agency-ID',agency).send({email,role});
+    expect(created.status).toBe(201);
+    const accepted=await request(app).post('/api/v1/agencies/invitations/accept')
+      .set('Authorization',`Bearer ${recipient}`).send({token:created.body.data.token});
+    expect(accepted.status).toBe(200);
+    return recipient;
+  }
+
+  it('lists, updates, removes, and audits agency members while protecting the owner',async()=>{
+    if(!pool)return;
+    const owner=await bootstrap('membership-owner@example.com');
+    const agency=await agencyId(owner);
+    const agent=await invite(owner,agency,'membership-agent@example.com','agent');
+    const agentId=(await request(app).get('/api/v1/agencies/members')
+      .set('Authorization',`Bearer ${owner}`).set('X-Agency-ID',agency)).body.data.items
+      .find((member:{email:string})=>member.email==='membership-agent@example.com').userId;
+    const listing=await request(app).get('/api/v1/agencies/members')
+      .set('Authorization',`Bearer ${owner}`).set('X-Agency-ID',agency);
+    expect(listing.status).toBe(200);
+    expect(listing.body.data.items.map((member:{role:string})=>member.role)).toContain('owner');
+    expect((await request(app).patch(`/api/v1/agencies/members/${agentId}`)
+      .set('Authorization',`Bearer ${owner}`).set('X-Agency-ID',agency).send({role:'viewer'})).status).toBe(200);
+    expect((await request(app).patch(`/api/v1/agencies/members/${(await request(app).get('/api/v1/agencies/members').set('Authorization',`Bearer ${owner}`).set('X-Agency-ID',agency)).body.data.items.find((m:{email:string})=>m.email==='membership-owner@example.com').userId}`)
+      .set('Authorization',`Bearer ${owner}`).set('X-Agency-ID',agency).send({role:'viewer'})).status).toBe(409);
+    expect((await request(app).delete(`/api/v1/agencies/members/${agentId}`)
+      .set('Authorization',`Bearer ${owner}`).set('X-Agency-ID',agency)).status).toBe(204);
+    const member=await pool.query<{status:string;role:string}>('SELECT status,role FROM agency_memberships WHERE agency_id=$1 AND user_id=$2',[agency,agentId]);
+    expect(member.rows[0]).toEqual({status:'suspended',role:'viewer'});
+    const events=await pool.query<{action:string}>("SELECT action FROM audit_events WHERE entity_type='agency_membership' AND entity_id=$1 ORDER BY action",[agentId]);
+    expect(events.rows.map(row=>row.action)).toEqual(['agency.member.removed','agency.member.role_updated']);
+    expect(agent).toBeTruthy();
+  });
+
+  it('restricts admin management to agent/viewer members and blocks non-admin access',async()=>{
+    if(!pool)return;
+    const owner=await bootstrap('membership-owner-two@example.com');
+    const agency=await agencyId(owner);
+    const admin=await invite(owner,agency,'membership-admin@example.com','admin');
+    const agent=await invite(owner,agency,'membership-agent-two@example.com','agent');
+    const members=(await request(app).get('/api/v1/agencies/members').set('Authorization',`Bearer ${owner}`).set('X-Agency-ID',agency)).body.data.items;
+    const adminId=members.find((m:{email:string})=>m.email==='membership-admin@example.com').userId;
+    const agentId=members.find((m:{email:string})=>m.email==='membership-agent-two@example.com').userId;
+    expect((await request(app).get('/api/v1/agencies/members').set('Authorization',`Bearer ${agent}`).set('X-Agency-ID',agency)).status).toBe(403);
+    expect((await request(app).patch(`/api/v1/agencies/members/${agentId}`).set('Authorization',`Bearer ${admin}`).set('X-Agency-ID',agency).send({role:'admin'})).status).toBe(403);
+    expect((await request(app).delete(`/api/v1/agencies/members/${adminId}`).set('Authorization',`Bearer ${admin}`).set('X-Agency-ID',agency)).status).toBe(403);
+    expect((await request(app).patch(`/api/v1/agencies/members/${adminId}`).set('Authorization',`Bearer ${owner}`).set('X-Agency-ID',agency).send({role:'viewer'})).status).toBe(200);
+  });
+
+  it('does not reveal or mutate memberships across agencies',async()=>{
+    if(!pool)return;
+    const first=await bootstrap('membership-first-owner@example.com');
+    const firstAgency=await agencyId(first);
+    const second=await register('membership-second-owner@example.com');
+    const secondCreated=await request(app).post('/api/v1/agencies').set('Authorization',`Bearer ${second}`).send({name:'Second Membership Agency'});
+    expect(secondCreated.status).toBe(201);
+    expect((await request(app).get('/api/v1/agencies/members').set('Authorization',`Bearer ${second}`).set('X-Agency-ID',firstAgency)).status).toBe(403);
+    expect((await request(app).get('/api/v1/agencies/members').set('Authorization',`Bearer ${first}`).set('X-Agency-ID',secondCreated.body.data.id)).status).toBe(403);
+  });
+});
