@@ -26,5 +26,5 @@ const mpesaFields=[parsed.data.MPESA_CONSUMER_KEY,parsed.data.MPESA_CONSUMER_SEC
 const mpesaAny=mpesaFields.some(Boolean);
 const mpesaAll=mpesaFields.every(Boolean);
 if(mpesaAny&&!mpesaAll)throw new Error('M-Pesa requires consumer key, consumer secret, shortcode, passkey, callback base URL, and callback secret');
-if(parsed.data.NODE_ENV==='production'&&mpesaAll&&!parsed.data.MPESA_CALLBACK_BASE_URL?.startsWith('https://'))throw new Error('Production M-Pesa callback URL must use HTTPS');
+if(mpesaAll&&!parsed.data.MPESA_CALLBACK_BASE_URL?.startsWith('https://'))throw new Error('Production M-Pesa callback URL must use HTTPS');
 export const config=Object.freeze(parsed.data);
