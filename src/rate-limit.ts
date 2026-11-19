@@ -31,6 +31,11 @@ export function createRateLimiter(options: { windowMs: number; max: number }): R
       for (const [address, entry] of buckets) {
         if (entry.resetAt <= now) buckets.delete(address);
       }
+      while (buckets.size > 5000) {
+        const oldestAddress = buckets.keys().next().value;
+        if (oldestAddress === undefined) break;
+        buckets.delete(oldestAddress);
+      }
     }
     next();
   };
