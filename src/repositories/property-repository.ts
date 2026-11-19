@@ -35,18 +35,35 @@ export class PropertyRepository{
  async getById(id:string,agencyId?:string):Promise<StoredProperty|undefined>{if(!UUID_RE.test(id))return undefined;if(pool){const r=await pool.query(`SELECT * FROM properties WHERE id=$1${agencyId?' AND agency_id=$2':' AND publication_status=\'published\''}` ,agencyId?[id,agencyId]:[id]);return r.rows[0]?fromRow(r.rows[0]):undefined;}const item=memory.get(id);return item&&(!agencyId?(item.publicationStatus==='published'):item.agencyId===agencyId)?item:undefined;}
  async create(input:PropertyInput,ownerId:string,agencyId?:string):Promise<StoredProperty>{
   const normalized={...input,slug:input.slug||slugify(input.title),location:input.location||input.city,address:input.address||input.location||input.city};
-  if(pool){const r=await pool.query(`INSERT INTO properties(id,owner_id,agency_id,publication_status,title,slug,description,category,price,price_type,currency,property_type,transaction_type,bedrooms,bathrooms,city,location,address,country,area_sqm,size_acres,title_status,land_use,max_guests,featured,image_urls) VALUES($1,$2,$3,'draft',$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25) RETURNING *`,[randomUUID(),ownerId,agencyId??null,normalized.title,normalized.slug,normalized.description,normalized.category,normalized.price,normalized.priceType,normalized.currency,normalized.propertyType,normalized.transactionType,normalized.bedrooms,normalized.bathrooms,normalized.city,normalized.location,normalized.address,normalized.country,normalized.areaSqm,normalized.sizeAcres,normalized.titleStatus??null,normalized.landUse??null,normalized.maxGuests,normalized.featured,JSON.stringify(normalized.imageUrls)]);return fromRow(r.rows[0]!);}
+  if(pool){
+   const client=await pool.connect();
+   try{
+    await client.query('BEGIN');
+    const result=await client.query(`INSERT INTO properties(id,owner_id,agency_id,publication_status,title,slug,description,category,price,price_type,currency,property_type,transaction_type,bedrooms,bathrooms,city,location,address,country,area_sqm,size_acres,title_status,land_use,max_guests,featured,image_urls) VALUES($1,$2,$3,'draft',$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25) RETURNING *`,[randomUUID(),ownerId,agencyId??null,normalized.title,normalized.slug,normalized.description,normalized.category,normalized.price,normalized.priceType,normalized.currency,normalized.propertyType,normalized.transactionType,normalized.bedrooms,normalized.bathrooms,normalized.city,normalized.location,normalized.address,normalized.country,normalized.areaSqm,normalized.sizeAcres,normalized.titleStatus??null,normalized.landUse??null,normalized.maxGuests,normalized.featured,JSON.stringify(normalized.imageUrls)]);
+    const property=result.rows[0]!;
+    await client.query('INSERT INTO audit_events(id,agency_id,actor_user_id,action,entity_type,entity_id,metadata) VALUES($1,$2,$3,\'property.created\',\'property\',$4,$5::jsonb)',[randomUUID(),agencyId??null,ownerId,property.id,JSON.stringify({category:normalized.category,propertyType:normalized.propertyType,transactionType:normalized.transactionType})]);
+    await client.query('COMMIT');
+    return fromRow(property);
+   }catch(error){await client.query('ROLLBACK');throw error;}finally{client.release();}
+  }
   const now=new Date().toISOString();const p:StoredProperty={...normalized,id:randomUUID(),ownerId,...(agencyId?{agencyId}:{}),publicationStatus:'draft',createdAt:now,updatedAt:now};memory.set(p.id,p);return p;
  }
- async update(id:string,input:PropertyInput,agencyId?:string):Promise<StoredProperty|undefined>{
+ async update(id:string,input:PropertyInput,agencyId?:string,actorUserId?:string):Promise<StoredProperty|undefined>{
   if(!UUID_RE.test(id))return undefined;
   const normalized={...input,slug:input.slug||slugify(input.title),location:input.location||input.city,address:input.address||input.location||input.city};
   if(pool){
    const values=[id,normalized.title,normalized.slug,normalized.description,normalized.category,normalized.price,normalized.priceType,normalized.currency,normalized.propertyType,normalized.transactionType,normalized.bedrooms,normalized.bathrooms,normalized.city,normalized.location,normalized.address,normalized.country,normalized.areaSqm,normalized.sizeAcres,normalized.titleStatus??null,normalized.landUse??null,normalized.maxGuests,normalized.featured,JSON.stringify(normalized.imageUrls)];
    if(agencyId)values.push(agencyId);
    const sql=`UPDATE properties SET title=$2,slug=$3,description=$4,category=$5,price=$6,price_type=$7,currency=$8,property_type=$9,transaction_type=$10,bedrooms=$11,bathrooms=$12,city=$13,location=$14,address=$15,country=$16,area_sqm=$17,size_acres=$18,title_status=$19,land_use=$20,max_guests=$21,featured=$22,image_urls=$23,updated_at=now() WHERE id=$1${agencyId?' AND agency_id=$24':''} RETURNING *`;
-   const r=await pool.query(sql,values);
-   return r.rows[0]?fromRow(r.rows[0]):undefined;
+   const client=await pool.connect();
+   try{
+    await client.query('BEGIN');
+    const result=await client.query(sql,values);
+    if(!result.rows[0]){await client.query('ROLLBACK');return undefined;}
+    await client.query('INSERT INTO audit_events(id,agency_id,actor_user_id,action,entity_type,entity_id,metadata) VALUES($1,$2,$3,\'property.updated\',\'property\',$4,$5::jsonb)',[randomUUID(),agencyId??null,actorUserId??null,id,JSON.stringify({category:normalized.category,propertyType:normalized.propertyType,transactionType:normalized.transactionType})]);
+    await client.query('COMMIT');
+    return fromRow(result.rows[0]);
+   }catch(error){await client.query('ROLLBACK');throw error;}finally{client.release();}
   }
   const old=memory.get(id);
   if(!old||(agencyId&&old.agencyId!==agencyId))return undefined;
@@ -67,6 +84,20 @@ export class PropertyRepository{
    return fromRow(result.rows[0]);
   }catch(error){await client.query('ROLLBACK');throw error;}finally{client.release();}
  }
- async delete(id:string,agencyId?:string):Promise<boolean>{if(!UUID_RE.test(id))return false;if(pool){const r=await pool.query(`DELETE FROM properties WHERE id=$1${agencyId?' AND agency_id=$2':''}`,agencyId?[id,agencyId]:[id]);return (r.rowCount??0)>0;}const old=memory.get(id);if(!old||(agencyId&&old.agencyId!==agencyId))return false;return memory.delete(id);}
+ async delete(id:string,agencyId?:string,actorUserId?:string):Promise<boolean>{
+  if(!UUID_RE.test(id))return false;
+  if(pool){
+   const client=await pool.connect();
+   try{
+    await client.query('BEGIN');
+    const result=await client.query(`DELETE FROM properties WHERE id=$1${agencyId?' AND agency_id=$2':''} RETURNING id`,agencyId?[id,agencyId]:[id]);
+    if(!result.rows[0]){await client.query('ROLLBACK');return false;}
+    await client.query('INSERT INTO audit_events(id,agency_id,actor_user_id,action,entity_type,entity_id,metadata) VALUES($1,$2,$3,\'property.deleted\',\'property\',$4,$5::jsonb)',[randomUUID(),agencyId??null,actorUserId??null,id,'{}']);
+    await client.query('COMMIT');
+    return true;
+   }catch(error){await client.query('ROLLBACK');throw error;}finally{client.release();}
+  }
+  const old=memory.get(id);if(!old||(agencyId&&old.agencyId!==agencyId))return false;return memory.delete(id);
+ }
  async clear():Promise<void>{if(!pool)memory.clear();else await pool.query('DELETE FROM properties');}
 }
