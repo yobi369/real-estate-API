@@ -20,7 +20,7 @@ export class SubscriptionPaymentRepository {
    const active=await client.query("SELECT id FROM agency_subscriptions WHERE agency_id=$1 AND status IN ('active','trialing') AND current_period_end>now() LIMIT 1 FOR UPDATE",[agencyId]);
    if(active.rows[0])throw new Error('ACTIVE_SUBSCRIPTION');
    const id=randomUUID();
-   const inserted=await client.query('INSERT INTO subscription_payments(id,agency_id,plan_id,provider,idempotency_key,phone_number,amount_minor,currency,status) VALUES($1,$2,$3,\'mpesa\',$4,$5,$6,\'KES\',\'initiated\') RETURNING *',[id,agencyId,plan.id,idempotencyKey,phone,plan.priceMinor]);
+   await client.query('INSERT INTO subscription_payments(id,agency_id,plan_id,provider,idempotency_key,phone_number,amount_minor,currency,status) VALUES($1,$2,$3,\'mpesa\',$4,$5,$6,\'KES\',\'initiated\') RETURNING *',[id,agencyId,plan.id,idempotencyKey,phone,plan.priceMinor]);
    await client.query('COMMIT');
    return {payment:{id,agencyId,planId:plan.id,planCode:plan.code,amountMinor:plan.priceMinor,currency:'KES',status:'initiated',checkoutRequestId:null,merchantRequestId:null},created:true};
   }catch(error){await client.query('ROLLBACK');if(typeof error==='object'&&error!==null&&'code'in error&&(error as {code?:unknown}).code==='23505')throw new Error('PAYMENT_ALREADY_PENDING');throw error;}
