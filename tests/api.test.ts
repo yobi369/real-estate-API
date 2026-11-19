@@ -78,6 +78,7 @@ describe('subscription payment lifecycle',()=>{
  });
 });
 describe('subscription billing foundation',()=>{
+ it('does not expose the Daraja callback route when no callback secret is configured',async()=>{expect((await request(app).post('/api/v1/webhooks/mpesa/not-a-real-secret').send({})).status).toBe(404);});
  it('exposes active plans and the selected agency subscription summary',async()=>{
   if(!pool)return;
   const plans=await request(app).get('/api/v1/billing/plans');
