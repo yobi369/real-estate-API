@@ -70,6 +70,11 @@ describe('subscription payment lifecycle',()=>{
   expect(queryDuplicate.duplicate).toBe(true);
   const querySubscription=await pool.query('SELECT id FROM agency_subscriptions WHERE agency_id=$1',[thirdAgency.body.data.id]);
   expect(querySubscription.rows).toHaveLength(1);
+  const lateReceipt='R'+randomUUID().replaceAll('-','').slice(0,10);
+  const lateCallback=await payments.processCallback({checkoutRequestId:thirdCheckout,resultCode:0,resultDescription:'Late callback',amount:2500,receipt:lateReceipt,payload:{Body:{stkCallback:{ResultCode:0}}}});
+  expect(lateCallback.duplicate).toBe(true);
+  const storedReceipt=await pool.query<{mpesa_receipt_number:string}>('SELECT mpesa_receipt_number FROM subscription_payments WHERE id=$1',[thirdAttempt.payment.id]);
+  expect(storedReceipt.rows[0]?.mpesa_receipt_number).toBe(lateReceipt);
  });
 });
 describe('subscription billing foundation',()=>{
