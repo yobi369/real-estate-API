@@ -14,7 +14,13 @@ async function createAdmin(email: string): Promise<string> {
 async function getAgencyId(token: string): Promise<string> {
   const response = await request(app).get('/api/v1/agencies/me').set('Authorization', 'Bearer ' + token);
   expect(response.status).toBe(200);
-  return response.body.data.items[0].id as string;
+  const agencyId = response.body.data.items[0].id as string;
+  if (pool) {
+    const planId = '00000000-0000-4000-8000-000000000254';
+    await pool.query("INSERT INTO subscription_plans(id,code,name,price_minor,billing_interval,max_listings,max_members,is_active) VALUES($1,'test-unlimited','Test Unlimited',100,'month',NULL,NULL,true) ON CONFLICT(code) DO UPDATE SET is_active=true,max_listings=NULL,max_members=NULL", [planId]);
+    await pool.query("INSERT INTO agency_subscriptions(id,agency_id,plan_id,status,provider,current_period_start,current_period_end) SELECT gen_random_uuid(),$1,$2,'active','manual',now(),now()+interval '30 days' WHERE NOT EXISTS(SELECT 1 FROM agency_subscriptions WHERE agency_id=$1 AND status IN ('active','trialing'))", [agencyId, planId]);
+  }
+  return agencyId;
 }
 
 async function publish(token: string, id: string, agencyId: string): Promise<void> {
