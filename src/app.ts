@@ -55,6 +55,7 @@ const toPublicProperty=(property:StoredProperty)=>{const {ownerId,agencyId,...pu
 const authBootstrapRateLimit=createRateLimiter({windowMs:15*60*1000,max:5});
 const authRegisterRateLimit=createRateLimiter({windowMs:15*60*1000,max:10});
 const authLoginRateLimit=createRateLimiter({windowMs:15*60*1000,max:10});
+const billingCheckoutRateLimit=createRateLimiter({windowMs:15*60*1000,max:5});
 const publicSearchRateLimit=createRateLimiter({windowMs:60*1000,max:120});
 const inquiryRateLimits=new Map<string,{count:number;resetAt:number}>();
 const inquiryRateLimit:express.RequestHandler=(req,res,next)=>{
@@ -255,7 +256,7 @@ app.delete('/api/v1/agencies/invitations/:id',authenticate,async(req,res)=>{
   throw error;
  }
 });
-app.post('/api/v1/billing/mpesa/stk-push',authenticate,async(req,res)=>{
+app.post('/api/v1/billing/mpesa/stk-push',billingCheckoutRateLimit,authenticate,async(req,res)=>{
  const agency=await resolveActiveAgency(req,res);if(!agency)return;
  if(!['owner','admin'].includes(agency.role))return res.status(403).json({error:{code:'FORBIDDEN',message:'Agency owner or admin permission is required to manage billing'}});
  if(!isMpesaConfigured())return res.status(503).json({error:{code:'MPESA_NOT_CONFIGURED',message:'M-Pesa checkout is not configured for this environment'}});
