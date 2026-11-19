@@ -47,6 +47,12 @@ npm run verify
 
 See [the integration pilot proposal](docs/COMMERCIAL-PILOT-PROPOSAL.md) for the indicative scope, pricing and commercial boundaries.
 
+## Agency billing foundation
+
+- `GET /api/v1/billing/plans` returns active subscription plans.
+- `GET /api/v1/billing/subscription` returns the selected agency's current subscription and recent payment history (owner/admin only; requires `X-Agency-ID`).
+- Subscription plans are inactive until final prices and limits are approved. M-Pesa checkout, callback reconciliation, and customer-facing billing UI are not yet enabled.
+
 ## Production deployment
 
 See [the production-readiness checklist](docs/PRODUCTION-READINESS.md) before using customer or personal data. The public demo is not a production customer environment. The agency console is a product workflow foundation; billing, automated invitation email, and production customer onboarding remain separate release gates.
