@@ -182,9 +182,9 @@ export async function migrate(targetPool: pg.Pool | null = migrationPool): Promi
       INSERT INTO subscription_plans
         (id,code,name,description,currency,price_minor,billing_interval,max_listings,max_members,monthly_api_requests,features,is_active)
       VALUES
-        ('00000000-0000-4000-8000-000000000251','starter','Starter','For small agencies starting their digital property operations.','KES',250000,'month',NULL,NULL,NULL,'["agency_console","property_inventory","enquiries"]'::jsonb,false),
-        ('00000000-0000-4000-8000-000000000252','professional','Professional','For growing agencies managing larger property portfolios.','KES',500000,'month',NULL,NULL,NULL,'["agency_console","property_inventory","enquiries","team_management","reports"]'::jsonb,false),
-        ('00000000-0000-4000-8000-000000000253','business','Business','For established agencies and multi-team operations.','KES',1200000,'month',NULL,NULL,NULL,'["agency_console","property_inventory","enquiries","team_management","reports","priority_support"]'::jsonb,false)
+        ('00000000-0000-4000-8000-000000000251','starter','Starter','For small agencies starting their digital property operations.','KES',250000,'month',25,3,NULL,'["agency_console","property_inventory","enquiries"]'::jsonb,false),
+        ('00000000-0000-4000-8000-000000000252','professional','Professional','For growing agencies managing larger property portfolios.','KES',500000,'month',100,10,NULL,'["agency_console","property_inventory","enquiries","team_management","reports"]'::jsonb,false),
+        ('00000000-0000-4000-8000-000000000253','business','Business','For established agencies and multi-team operations.','KES',1200000,'month',500,30,NULL,'["agency_console","property_inventory","enquiries","team_management","reports","priority_support"]'::jsonb,false)
       ON CONFLICT (code) DO NOTHING;
       CREATE TABLE IF NOT EXISTS agency_subscriptions (
         id uuid PRIMARY KEY,
