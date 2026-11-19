@@ -1,12 +1,13 @@
 import {beforeEach,describe,expect,it} from 'vitest';
 import request from 'supertest';
 import {app,inquiryRepository} from '../src/app.js';
-import {migrate} from '../src/db.js';
+import {migrate,pool} from '../src/db.js';
 const payload={requestType:'viewing',name:'Amina Buyer',email:'amina@example.com',phone:'+254700000000',message:'I would like to arrange a viewing.',listingTitle:'Riverside apartment',listingCategory:'property'};
 beforeEach(async()=>{await migrate();await inquiryRepository.clear();});
 describe('customer enquiries',()=>{
  it('validates and stores a public viewing request',async()=>{const r=await request(app).post('/api/v1/inquiries').send(payload);expect(r.status).toBe(201);expect(r.body.data.id).toBeTruthy();expect(r.body.data.status).toBe('new');expect(r.body.data.listingTitle).toBe(payload.listingTitle);expect((await inquiryRepository.list()).length).toBe(1);});
  it('rejects malformed contact details',async()=>{expect((await request(app).post('/api/v1/inquiries').send({...payload,email:'not-an-email'})).status).toBe(400);});
+ it('rejects enquiries for missing or unpublished listings without leaking database errors',async()=>{if(!pool)return;const response=await request(app).post('/api/v1/inquiries').send({...payload,listingId:'11111111-1111-4111-8111-111111111111'});expect(response.status).toBe(404);expect(response.body.error.code).toBe('LISTING_NOT_FOUND');});
  it('does not expose the enquiry inbox publicly',async()=>{expect((await request(app).get('/api/v1/inquiries')).status).toBe(401);});
  it('rejects non-admin users from the enquiry inbox',async()=>{const r=await request(app).post('/api/v1/auth/register').send({email:'agent@example.com',password:'StrongPassword123'});expect(r.status).toBe(201);expect((await request(app).get('/api/v1/inquiries').set('Authorization',`Bearer ${r.body.data.token}`)).status).toBe(403);});
 
