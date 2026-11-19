@@ -23,6 +23,12 @@ export class AgencyInvitationRepository {
       const actorRole = actor.rows[0]?.role;
       if (actorRole !== 'owner' && actorRole !== 'admin') throw new Error('ACTOR_NOT_AUTHORIZED');
       if (actorRole === 'admin' && role === 'admin') throw new Error('INVITATION_ROLE_FORBIDDEN');
+      const plan = await client.query<{ max_members: number | null }>(`SELECT p.max_members FROM agency_subscriptions s JOIN subscription_plans p ON p.id=s.plan_id WHERE s.agency_id=$1 AND s.status IN ('active','trialing') AND s.current_period_end>now() ORDER BY s.created_at DESC LIMIT 1`, [agencyId]);
+      if (!plan.rows[0]) throw new Error('SUBSCRIPTION_REQUIRED');
+      if (plan.rows[0].max_members !== null) {
+        const seats = await client.query<{ count: string }>(`SELECT ((SELECT count(*) FROM agency_memberships WHERE agency_id=$1 AND status='active') + (SELECT count(*) FROM agency_invitations WHERE agency_id=$1 AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at>now()))::text AS count`, [agencyId]);
+        if (Number(seats.rows[0]?.count ?? 0) >= plan.rows[0].max_members) throw new Error('TEAM_LIMIT_REACHED');
+      }
       const existing = await client.query(
         "SELECT id FROM agency_invitations WHERE agency_id=$1 AND lower(email)=lower($2) AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at>now() FOR UPDATE",
         [agencyId, email]
