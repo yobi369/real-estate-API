@@ -83,9 +83,14 @@ Record evidence for each drill:
 
 Delete the disposable restore target and temporary credentials only after evidence is captured and the owner approves cleanup. Keep the evidence record without customer personal data.
 
-## Current implementation caveat
+## Migration execution boundary
 
-The application currently executes idempotent DDL/backfill logic from `migrate()` during server startup. This is not yet a controlled, separately versioned migration release process and means the application runtime may require schema-owner privileges. Before enforcing a least-privilege runtime database role, move schema changes into an explicit migration command/job, test it on an isolated branch, and keep runtime startup free of DDL.
+The application server no longer runs schema DDL at startup. Run `npm run db:migrate` as a controlled one-off job before deploying the application release. In production, set both:
+
+- `DATABASE_URL`: the restricted runtime role connection string.
+- `MIGRATION_DATABASE_URL`: a separate schema-owner/migration role connection string, available only to the one-off migration job.
+
+The current migration body remains one idempotent DDL/backfill transaction and records legacy marker versions; it has not yet been decomposed into independently versioned, ordered migration files. Treat schema evolution as operator-controlled until that migration history is formalized. Test every migration on an isolated Neon branch before production execution.
 
 ## Release gate
 
