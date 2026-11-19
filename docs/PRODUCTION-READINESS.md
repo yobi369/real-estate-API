@@ -50,6 +50,12 @@ This checklist separates implemented controls from external or incomplete releas
 - [ ] Test deployment rollback and database restore procedures.
 - [ ] Verify live health/readiness, OpenAPI, and critical API flows after deployment.
 
+### Commercial billing and API monetization
+- [ ] Approve final KES plan pricing, billing intervals, listing/member/API quotas, trial policy, grace period, and refund/cancellation terms; activate only approved plans.
+- [ ] Enforce plan limits on listing creation, team seats, and API consumption before accepting paid customers.
+- [ ] Verify Daraja sandbox and production acceptance gates in [M-Pesa integration](MPESA-INTEGRATION.md); configure credentials only in the managed secret store.
+- [ ] Build API-key issuance/revocation, developer accounts, usage metering, per-plan quotas, and paid API access as the second commercial product.
+
 ### Customer and data governance
 - [ ] Agree data controller/processor responsibilities and applicable Kenyan data-protection obligations with the customer.
 - [ ] Document permitted fields, purpose, retention, deletion, and access rules.
