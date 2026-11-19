@@ -15,6 +15,7 @@ import { z } from 'zod';
 import { demoProperties } from './demo-data.js';
 import { pool } from './db.js';
 import { authenticate,bootstrapAdmin,loginUser,registerUser } from './auth.js';
+import { createRateLimiter } from './rate-limit.js';
 const require = createRequire(import.meta.url);
 type PinoHttpOptions = { level: string; genReqId: (req: express.Request, res: express.Response) => string; redact: string[] };
 const pinoHttp = require('pino-http') as (options: PinoHttpOptions) => express.RequestHandler;
@@ -38,6 +39,10 @@ const resolveActiveAgency=async(req:express.Request,res:express.Response):Promis
  }
 };
 const toPublicProperty=(property:StoredProperty)=>{const {ownerId,agencyId,...publicFields}=property;void ownerId;void agencyId;return publicFields;};
+const authBootstrapRateLimit=createRateLimiter({windowMs:15*60*1000,max:5});
+const authRegisterRateLimit=createRateLimiter({windowMs:15*60*1000,max:10});
+const authLoginRateLimit=createRateLimiter({windowMs:15*60*1000,max:10});
+const publicSearchRateLimit=createRateLimiter({windowMs:60*1000,max:120});
 const inquiryRateLimits=new Map<string,{count:number;resetAt:number}>();
 const inquiryRateLimit:express.RequestHandler=(req,res,next)=>{
  const now=Date.now();const key=req.ip||req.socket.remoteAddress||'unknown';
@@ -76,11 +81,11 @@ const spec={
 };
 app.get('/health/live',(_req,res)=>res.json({status:'ok',service:'real-estate-api'}));
 app.get('/health/ready',async(_req,res)=>{if(!pool)return res.status(503).json({status:'degraded',persistence:'in-memory-development-adapter'});try{await pool.query('SELECT 1');return res.status(200).json({status:'ready',persistence:'postgresql'});}catch{return res.status(503).json({status:'degraded',persistence:'postgresql'});}});
-app.get('/demo/properties',(req,res)=>{const parsed=propertyQuerySchema.safeParse(req.query);if(!parsed.success)return res.status(400).json({error:{code:'VALIDATION_ERROR',message:'Query parameters are invalid'}});const q=parsed.data;const needle=q.search?.toLocaleLowerCase();const matches=demoProperties.filter(p=>(!q.city||p.city.toLocaleLowerCase()===q.city.toLocaleLowerCase())&&(!q.propertyType||p.propertyType===q.propertyType)&&(!q.transactionType||p.transactionType===q.transactionType)&&(q.minPrice===undefined||p.price>=q.minPrice)&&(q.maxPrice===undefined||p.price<=q.maxPrice)&&(!needle||`${p.title} ${p.description} ${p.city}`.toLocaleLowerCase().includes(needle))).sort((a,b)=>b.createdAt.localeCompare(a.createdAt));const start=(q.page-1)*q.limit;return res.json({data:{items:matches.slice(start,start+q.limit),total:matches.length,page:q.page,limit:q.limit,notice:'Fictional sample data for demonstration only. Not live property listings.'}});});
+app.get('/demo/properties',publicSearchRateLimit,(req,res)=>{const parsed=propertyQuerySchema.safeParse(req.query);if(!parsed.success)return res.status(400).json({error:{code:'VALIDATION_ERROR',message:'Query parameters are invalid'}});const q=parsed.data;const needle=q.search?.toLocaleLowerCase();const matches=demoProperties.filter(p=>(!q.city||p.city.toLocaleLowerCase()===q.city.toLocaleLowerCase())&&(!q.propertyType||p.propertyType===q.propertyType)&&(!q.transactionType||p.transactionType===q.transactionType)&&(q.minPrice===undefined||p.price>=q.minPrice)&&(q.maxPrice===undefined||p.price<=q.maxPrice)&&(!needle||`${p.title} ${p.description} ${p.city}`.toLocaleLowerCase().includes(needle))).sort((a,b)=>b.createdAt.localeCompare(a.createdAt));const start=(q.page-1)*q.limit;return res.json({data:{items:matches.slice(start,start+q.limit),total:matches.length,page:q.page,limit:q.limit,notice:'Fictional sample data for demonstration only. Not live property listings.'}});});
 app.get('/openapi.json',(_req,res)=>res.json(spec));app.use('/docs',swaggerUi.serve,swaggerUi.setup(spec));
-app.post('/api/v1/admin/bootstrap',async(req,res)=>{const result=await bootstrapAdmin(req.body,req.header('x-bootstrap-token')??'');if('error'in result){const status=result.error==='DISABLED'?404:result.error==='EXISTS'?409:400;return res.status(status).json({error:{code:result.error,message:result.error==='DISABLED'?'Bootstrap is unavailable':result.error==='EXISTS'?'An administrator already exists':'Administrator details are invalid'}});}return res.status(201).json({data:{user:result.principal,token:result.token,tokenType:'Bearer',expiresIn:config.JWT_TTL_SECONDS}});});
-app.post('/api/v1/auth/register',async(req,res)=>{const result=await registerUser(req.body);if('error'in result)return res.status(result.error==='EXISTS'?409:400).json({error:{code:result.error==='EXISTS'?'EMAIL_EXISTS':'VALIDATION_ERROR',message:result.error==='EXISTS'?'An account with this email already exists':'Email or password does not meet requirements'}});return res.status(201).json({data:{user:result.principal,token:result.token,tokenType:'Bearer',expiresIn:config.JWT_TTL_SECONDS}});});
-app.post('/api/v1/auth/login',async(req,res)=>{const result=await loginUser(req.body);if(!result)return res.status(401).json({error:{code:'INVALID_CREDENTIALS',message:'Email or password is incorrect'}});return res.json({data:{user:result.principal,token:result.token,tokenType:'Bearer',expiresIn:config.JWT_TTL_SECONDS}});});
+app.post('/api/v1/admin/bootstrap',authBootstrapRateLimit,async(req,res)=>{const result=await bootstrapAdmin(req.body,req.header('x-bootstrap-token')??'');if('error'in result){const status=result.error==='DISABLED'?404:result.error==='EXISTS'?409:400;return res.status(status).json({error:{code:result.error,message:result.error==='DISABLED'?'Bootstrap is unavailable':result.error==='EXISTS'?'An administrator already exists':'Administrator details are invalid'}});}return res.status(201).json({data:{user:result.principal,token:result.token,tokenType:'Bearer',expiresIn:config.JWT_TTL_SECONDS}});});
+app.post('/api/v1/auth/register',authRegisterRateLimit,async(req,res)=>{const result=await registerUser(req.body);if('error'in result)return res.status(result.error==='EXISTS'?409:400).json({error:{code:result.error==='EXISTS'?'EMAIL_EXISTS':'VALIDATION_ERROR',message:result.error==='EXISTS'?'An account with this email already exists':'Email or password does not meet requirements'}});return res.status(201).json({data:{user:result.principal,token:result.token,tokenType:'Bearer',expiresIn:config.JWT_TTL_SECONDS}});});
+app.post('/api/v1/auth/login',authLoginRateLimit,async(req,res)=>{const result=await loginUser(req.body);if(!result)return res.status(401).json({error:{code:'INVALID_CREDENTIALS',message:'Email or password is incorrect'}});return res.json({data:{user:result.principal,token:result.token,tokenType:'Bearer',expiresIn:config.JWT_TTL_SECONDS}});});
 app.post('/api/v1/agencies',authenticate,async(req,res)=>{
  const parsed=agencyCreateSchema.safeParse(req.body);
  if(!parsed.success)return res.status(400).json({error:{code:'VALIDATION_ERROR',message:'Agency name must contain 2 to 160 characters'}});
@@ -99,7 +104,7 @@ app.get('/api/v1/agencies/me',authenticate,async(req,res)=>{
   throw error;
  }
 });
-app.get('/api/v1/properties',async(req,res)=>{const parsed=propertyQuerySchema.safeParse(req.query);if(!parsed.success)return res.status(400).json({error:{code:'VALIDATION_ERROR',message:'Query parameters are invalid',details:parsed.error.flatten()}});const result=await propertyRepository.list(parsed.data);return res.json({data:{...result,items:result.items.map(toPublicProperty)}});});
+app.get('/api/v1/properties',publicSearchRateLimit,async(req,res)=>{const parsed=propertyQuerySchema.safeParse(req.query);if(!parsed.success)return res.status(400).json({error:{code:'VALIDATION_ERROR',message:'Query parameters are invalid',details:parsed.error.flatten()}});const result=await propertyRepository.list(parsed.data);return res.json({data:{...result,items:result.items.map(toPublicProperty)}});});
 app.get('/api/v1/properties/:id',async(req,res)=>{const p=await propertyRepository.getById(String(req.params.id));if(!p)return res.status(404).json({error:{code:'PROPERTY_NOT_FOUND',message:'Property was not found'}});return res.json({data:toPublicProperty(p)});});
 
 // Administrator-only image uploads. Images are stored in PostgreSQL, not on the
@@ -150,4 +155,10 @@ app.post('/api/v1/inquiries',inquiryRateLimit,async(req,res)=>{const parsed=inqu
 app.get('/api/v1/inquiries',authenticate,async(req,res)=>{const memberships=await agencyRepository.listForUser(req.principal!.id);if(!memberships.some(m=>m.status==='active'))return res.status(403).json({error:{code:'FORBIDDEN',message:'Active agency membership is required to access the enquiry inbox'}});const agency=await resolveActiveAgency(req,res);if(!agency)return;if(!['owner','admin'].includes(agency.role))return res.status(403).json({error:{code:'FORBIDDEN',message:'Agency owner or admin permission is required'}});return res.json({data:{items:await inquiryRepository.list(100,agency.id)}});});
 app.use('/demo',express.static(resolve(process.cwd(),'public/demo'),{index:'index.html'}));
 app.use((_req,res)=>res.status(404).json({error:{code:'NOT_FOUND',message:'Route was not found'}}));
-app.use((error:unknown,_req:express.Request,res:express.Response,next:express.NextFunction)=>{void next;app.emit('application-error',error);if(res.headersSent)return;return res.status(500).json({error:{code:'INTERNAL_ERROR',message:'An unexpected error occurred'}});});
+app.use((error:unknown,_req:express.Request,res:express.Response,next:express.NextFunction)=>{
+ void next;app.emit('application-error',error);if(res.headersSent)return;
+ const status=typeof error==='object'&&error!==null&&'status'in error&&typeof (error as {status?:unknown}).status==='number'?(error as {status:number}).status:500;
+ if(status===413)return res.status(413).json({error:{code:'PAYLOAD_TOO_LARGE',message:'Request body exceeds the 1 MiB limit'}});
+ if(status===400)return res.status(400).json({error:{code:'INVALID_REQUEST',message:'Request body is malformed or invalid'}});
+ return res.status(500).json({error:{code:'INTERNAL_ERROR',message:'An unexpected error occurred'}});
+});
