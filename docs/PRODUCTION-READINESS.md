@@ -8,11 +8,11 @@ This checklist separates implemented controls from external or incomplete releas
 - [x] PostgreSQL repositories, constraints, indexes, and additive multi-agency schema initialization.
 - [x] Development/test in-memory adapter; readiness returns 503 without PostgreSQL.
 - [x] Scrypt password hashing, expiring HMAC-signed bearer tokens, and secret-protected first-admin bootstrap.
-- [x] Agency onboarding, active membership context resolution, agency-scoped listing writes, publication lifecycle, and scoped enquiry inbox.
+- [x] Agency onboarding, active membership context resolution, agency-scoped listing writes, publication lifecycle, scoped enquiry inbox, and owner/admin membership administration with cross-agency isolation and owner protection.
 - [x] Public reads restricted to published listings; public responses omit owner and agency identifiers.
 - [x] Input validation, Helmet, configured CORS, request IDs, redacted sensitive headers, and bounded JSON body parsing.
 - [x] Process-local rate limits for bootstrap, registration, login, public search/demo, and enquiries; limits are not distributed.
-- [x] Security regression tests for headers, auth throttling, oversized JSON payload handling, and enquiry routing (38 tests passed on Node 22/24 with PostgreSQL 16; see QUALITY-EVIDENCE.md).
+- [x] Security regression tests for headers, auth throttling, oversized JSON payload handling, enquiry routing, invitation lifecycle, and agency membership authorization/auditing (latest membership suite awaits CI verification).
 - [x] Dependency-free HTTP benchmark runner and documented evidence procedure; no production capacity claim has been established.
 - [x] CI workflow audits production dependencies and runs typecheck, tests, build, and lint on Node 22/24 with PostgreSQL 16.
 
@@ -29,8 +29,8 @@ This checklist separates implemented controls from external or incomplete releas
 ### Identity and application security
 - [ ] Replace process-local rate limits with shared/distributed enforcement or an edge/WAF equivalent before scaling horizontally.
 - [ ] Implement email verification, secure password reset, token revocation/rotation, and account/session lifecycle controls.
-- [ ] Extend audit events to membership administration, invitation lifecycle, and remaining privileged operations; listing create/update/delete/publication and agency creation/bootstrap are covered.
-- [ ] Implement invitation create/accept/revoke endpoints; schema storage alone is not an invitation workflow.
+- [ ] Extend audit events to remaining privileged operations and complete the independent audit-coverage review; agency, listing, invitation, and membership mutations are covered.
+- [x] Implement invitation create/accept/revoke endpoints with hashed expiring tokens, email matching, and transactional audit events.
 - [ ] Complete dependency, secret, and static-analysis review and resolve material findings.
 - [ ] Conduct independent authorization review and penetration testing.
 - [ ] Validate request timeouts, payload limits, and failure handling in the deployed environment.
