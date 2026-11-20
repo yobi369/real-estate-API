@@ -1,4 +1,6 @@
 import type { Request, Response, NextFunction, RequestHandler } from 'express';
+import { createHmac } from 'node:crypto';
+import { config } from './config.js';
 import { pool } from './db.js';
 
 type Bucket = { count: number; resetAt: number };
@@ -21,7 +23,10 @@ export function createRateLimiter(options: RateLimitOptions): RequestHandler {
 
   return (req: Request, res: Response, next: NextFunction): void => {
     const address = req.ip || req.socket.remoteAddress || 'unknown';
-    const key = `${options.namespace}:${address}`;
+    // Store a keyed digest rather than a raw client IP. Rotating JWT_SECRET
+    // naturally invalidates these short-lived buckets without exposing addresses.
+    const addressDigest = createHmac('sha256', config.JWT_SECRET).update(address).digest('hex');
+    const key = `${options.namespace}:${addressDigest}`;
 
     const applyLimit = (count: number, resetAt: number): void => {
       const remaining = Math.max(0, options.max - count);
