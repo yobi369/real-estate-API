@@ -17,34 +17,42 @@ describe('API security controls', () => {
     expect(response.headers['x-powered-by']).toBeUndefined();
   });
 
-  it('rate-limits repeated authentication attempts by client IP', async () => {
+  it('rate-limits the observed client IP and ignores a forged X-Forwarded-For prefix', async () => {
     const ip = '198.51.100.44';
+    const forwarded = (spoofed: string) => `${spoofed}, ${ip}, 172.70.142.134, 10.25.80.5`;
     for (let attempt = 0; attempt < 10; attempt += 1) {
       const response = await request(app).post('/api/v1/auth/login')
-        .set('X-Forwarded-For', ip)
+        .set('X-Forwarded-For', forwarded(`203.0.113.${attempt + 1}`))
         .send({ email: 'unknown@example.com', password: 'WrongPassword123' });
       expect(response.status).toBe(401);
     }
     const blocked = await request(app).post('/api/v1/auth/login')
-      .set('X-Forwarded-For', ip)
+      .set('X-Forwarded-For', forwarded('203.0.113.250'))
       .send({ email: 'unknown@example.com', password: 'WrongPassword123' });
     expect(blocked.status).toBe(429);
     expect(blocked.body.error.code).toBe('RATE_LIMITED');
     expect(Number(blocked.headers['retry-after'])).toBeGreaterThan(0);
-    // Sustained blocked traffic must not grow the persisted counter without bound.
+    // Sustained blocked traffic with rotating forged prefixes must use the
+    // same real-client bucket and must not grow its persisted count unboundedly.
     for (let attempt = 0; attempt < 20; attempt += 1) {
       const repeated = await request(app).post('/api/v1/auth/login')
-        .set('X-Forwarded-For', ip)
+        .set('X-Forwarded-For', forwarded(`203.0.113.${100 + attempt}`))
         .send({ email: 'unknown@example.com', password: 'WrongPassword123' });
       expect(repeated.status).toBe(429);
     }
     const addressDigest = createHmac('sha256', config.JWT_SECRET).update(ip).digest('hex');
+    const forgedDigest = createHmac('sha256', config.JWT_SECRET).update('203.0.113.250').digest('hex');
     const persisted = await pool?.query<{ request_count: number; bucket_key: string }>(
       "SELECT request_count,bucket_key FROM api_rate_limit_buckets WHERE bucket_key=$1",
       [`auth-login:${addressDigest}`]
     );
+    const forgedBucket = await pool?.query(
+      "SELECT 1 FROM api_rate_limit_buckets WHERE bucket_key=$1",
+      [`auth-login:${forgedDigest}`]
+    );
     expect(Number(persisted?.rows[0]?.request_count)).toBe(11);
     expect(persisted?.rows[0]?.bucket_key).not.toContain(ip);
+    expect(forgedBucket?.rowCount).toBe(0);
   });
 
 
