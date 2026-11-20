@@ -16,8 +16,8 @@
 
 - Tune shared rate-limit thresholds and monitor PostgreSQL load in staging; retain edge/WAF protection for volumetric attacks. Review proxy trust configuration for the actual hosting topology.
 - Add email verification, secure password reset, account lockout/abuse workflows, and token revocation/rotation/session lifecycle.
-- Extend audit coverage to membership changes, invitation lifecycle, and additional administrative actions; listing create/update/delete/publication and agency creation/bootstrap are already audited transactionally.
-- Implement invitation create/accept/revoke workflows with single-use token verification and expiry enforcement.
+- Extend audit coverage to billing cancellation/reconciliation and remaining administrative actions; agency, membership, invitation, ownership-transfer, and listing mutations are already audited transactionally.
+- Invitation create/accept/revoke workflows are implemented with hashed single-use tokens, email matching, seven-day expiry, and transactional audit events. Automated invitation email delivery, resend, and expiry notifications remain outstanding.
 - Configure production PostgreSQL TLS, least-privilege database role, backups, retention, and restore drills.
 - Complete dependency/secret/static-analysis review, independent authorization review, penetration testing, and representative load testing.
 - Add monitoring, alerting, request timeouts, incident ownership, privacy/retention review, and deployment-specific smoke tests.
