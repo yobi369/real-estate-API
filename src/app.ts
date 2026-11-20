@@ -15,7 +15,7 @@ import { AgencyInvitationRepository, type InvitationRole } from './repositories/
 import { AgencyOwnershipTransferRepository } from './repositories/agency-ownership-transfer-repository.js';
 import { SubscriptionRepository } from './repositories/subscription-repository.js';
 import { SubscriptionPaymentRepository } from './repositories/subscription-payment-repository.js';
-import { initiateStkPush,isMpesaConfigured,normalizeKenyanPhone,queryStkPush } from './services/mpesa.js';
+import { initiateStkPush,isMpesaConfigured,normalizeKenyanPhone,parseStkCallback,queryStkPush } from './services/mpesa.js';
 import { z } from 'zod';
 import { demoProperties } from './demo-data.js';
 import { pool } from './db.js';
@@ -292,13 +292,9 @@ app.post('/api/v1/webhooks/mpesa/:secret',async(req,res)=>{
  const expectedCallbackSecret=config.MPESA_CALLBACK_SECRET??'';const suppliedCallbackSecret=String(req.params.secret??'');
  const expectedBytes=Buffer.from(expectedCallbackSecret);const suppliedBytes=Buffer.from(suppliedCallbackSecret);
  if(!expectedCallbackSecret||expectedBytes.length!==suppliedBytes.length||!timingSafeEqual(expectedBytes,suppliedBytes))return res.status(404).json({error:{code:'NOT_FOUND',message:'Callback route was not found'}});
- const body=req.body as {Body?:{stkCallback?:{CheckoutRequestID?:unknown;ResultCode?:unknown;ResultDesc?:unknown;CallbackMetadata?:{Item?:Array<{Name?:unknown;Value?:unknown}>}}}};
- const callback=body?.Body?.stkCallback;
- if(!callback||typeof callback.CheckoutRequestID!=='string'||!Number.isFinite(Number(callback.ResultCode)))return res.status(400).json({error:{code:'INVALID_MPESA_CALLBACK',message:'Callback payload is invalid'}});
- const items=Array.isArray(callback.CallbackMetadata?.Item)?callback.CallbackMetadata.Item:[];
- const amountValue=items.find(item=>item.Name==='Amount')?.Value;
- const receiptValue=items.find(item=>item.Name==='MpesaReceiptNumber')?.Value;
- const result=await subscriptionPaymentRepository.processCallback({checkoutRequestId:callback.CheckoutRequestID,resultCode:Number(callback.ResultCode),resultDescription:String(callback.ResultDesc??''),amount:amountValue===undefined?null:Number(amountValue),receipt:receiptValue===undefined?null:String(receiptValue),payload:{checkoutRequestId:callback.CheckoutRequestID,resultCode:Number(callback.ResultCode),resultDescription:String(callback.ResultDesc??''),amount:amountValue===undefined?null:Number(amountValue),receipt:receiptValue===undefined?null:String(receiptValue)}});
+ const callback=parseStkCallback(req.body);
+ if(!callback)return res.status(400).json({error:{code:'INVALID_MPESA_CALLBACK',message:'Callback payload is invalid'}});
+ const result=await subscriptionPaymentRepository.processCallback(callback);
  return res.status(200).json({ResultCode:0,ResultDesc:result.found?'Callback accepted':'No matching payment'});
 });
 app.get('/api/v1/billing/plans',async(_req,res)=>{
