@@ -1,5 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { createHmac } from 'node:crypto';
 import request from 'supertest';
+import { config } from '../src/config.js';
 import { app } from '../src/app.js';
 import { migrate, pool } from '../src/db.js';
 
@@ -36,11 +38,13 @@ describe('API security controls', () => {
         .send({ email: 'unknown@example.com', password: 'WrongPassword123' });
       expect(repeated.status).toBe(429);
     }
-    const persisted = await pool?.query<{ request_count: number }>(
-      "SELECT request_count FROM api_rate_limit_buckets WHERE bucket_key=$1",
-      [`auth-login:${ip}`]
+    const addressDigest = createHmac('sha256', config.JWT_SECRET).update(ip).digest('hex');
+    const persisted = await pool?.query<{ request_count: number; bucket_key: string }>(
+      "SELECT request_count,bucket_key FROM api_rate_limit_buckets WHERE bucket_key=$1",
+      [`auth-login:${addressDigest}`]
     );
     expect(Number(persisted?.rows[0]?.request_count)).toBe(11);
+    expect(persisted?.rows[0]?.bucket_key).not.toContain(ip);
   });
 
   it('rejects oversized JSON request bodies', async () => {
