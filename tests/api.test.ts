@@ -59,6 +59,7 @@ describe('subscription payment lifecycle',()=>{
   const current=await request(app).get('/api/v1/billing/subscription').set('Authorization','Bearer '+owner).set('X-Agency-ID',agency);
   expect(current.body.data.subscription.cancelAtPeriodEnd).toBe(true);
   const otherOwner=await register('billing-payment-owner2@example.com');
+  const otherActor=(await pool.query<{id:string}>('SELECT id FROM users WHERE email=$1',['billing-payment-owner2@example.com'])).rows[0]!.id;
   const otherAgency=await request(app).post('/api/v1/agencies').set('Authorization','Bearer '+otherOwner).send({name:'Second Billing Agency'});
   const otherAttempt=await payments.createAttempt(otherAgency.body.data.id,plan!,'254712345678','billing-idempotency-key-0003');
   const otherCheckout='checkout-'+randomUUID();
@@ -67,8 +68,15 @@ describe('subscription payment lifecycle',()=>{
   expect(rejected.status).toBe('pending');
   const noSubscription=await pool.query('SELECT id FROM agency_subscriptions WHERE agency_id=$1',[otherAgency.body.data.id]);
   expect(noSubscription.rows).toHaveLength(0);
-  const mismatchReconciled=await payments.processQuery({agencyId:otherAgency.body.data.id,paymentId:otherAttempt.payment.id,resultCode:0,resultDescription:'Confirmed by Daraja status query',payload:{ResultCode:0}});
+  const mismatchReconciled=await payments.processQuery({agencyId:otherAgency.body.data.id,paymentId:otherAttempt.payment.id,actorUserId:otherActor,resultCode:0,resultDescription:'Confirmed by Daraja status query',payload:{ResultCode:0}});
   expect(mismatchReconciled.status).toBe('succeeded');
+  const reconciliationAudit=await pool.query<{actor_user_id:string;entity_id:string;metadata:{status:string;resultCode:number|null}}>(
+   "SELECT actor_user_id,entity_id,metadata FROM audit_events WHERE agency_id=$1 AND action='agency.subscription.payment_reconciliation_checked'",
+   [otherAgency.body.data.id]
+  );
+  expect(reconciliationAudit.rows).toEqual([{
+   actor_user_id:otherActor,entity_id:otherAttempt.payment.id,metadata:{status:'succeeded',resultCode:0}
+  }]);
   const failedDuplicate=await payments.processCallback({checkoutRequestId:otherCheckout,resultCode:1,resultDescription:'Failed duplicate callback',amount:2500,receipt:'R'+randomUUID().replaceAll('-','').slice(0,10),payload:{Body:{stkCallback:{ResultCode:1}}}});
   expect(failedDuplicate.duplicate).toBe(true);
   const recoveredPayment=await pool.query<{mpesa_receipt_number:string|null}>('SELECT mpesa_receipt_number FROM subscription_payments WHERE id=$1',[otherAttempt.payment.id]);
@@ -76,14 +84,20 @@ describe('subscription payment lifecycle',()=>{
   const recoveredSubscription=await pool.query('SELECT id FROM agency_subscriptions WHERE agency_id=$1',[otherAgency.body.data.id]);
   expect(recoveredSubscription.rows).toHaveLength(1);
   const thirdOwner=await register('billing-query-owner@example.com');
+  const thirdActor=(await pool.query<{id:string}>('SELECT id FROM users WHERE email=$1',['billing-query-owner@example.com'])).rows[0]!.id;
   const thirdAgency=await request(app).post('/api/v1/agencies').set('Authorization','Bearer '+thirdOwner).send({name:'Query Reconciliation Agency'});
   const thirdAttempt=await payments.createAttempt(thirdAgency.body.data.id,plan!,'254712345678','billing-idempotency-key-0004');
   const thirdCheckout='checkout-'+randomUUID();
   await payments.attachCheckout(thirdAttempt.payment.id,'merchant-'+randomUUID(),thirdCheckout);
-  const stillPending=await payments.processQuery({agencyId:thirdAgency.body.data.id,paymentId:thirdAttempt.payment.id,resultCode:null,resultDescription:'Still processing',payload:{ResultCode:null}});
+  const stillPending=await payments.processQuery({agencyId:thirdAgency.body.data.id,paymentId:thirdAttempt.payment.id,actorUserId:thirdActor,resultCode:null,resultDescription:'Still processing',payload:{ResultCode:null}});
   expect(stillPending.status).toBe('pending');
-  const reconciled=await payments.processQuery({agencyId:thirdAgency.body.data.id,paymentId:thirdAttempt.payment.id,resultCode:0,resultDescription:'Confirmed by status query',payload:{ResultCode:0}});
+  const reconciled=await payments.processQuery({agencyId:thirdAgency.body.data.id,paymentId:thirdAttempt.payment.id,actorUserId:thirdActor,resultCode:0,resultDescription:'Confirmed by status query',payload:{ResultCode:0}});
   expect(reconciled.status).toBe('succeeded');
+  const reconciliationHistory=await pool.query<{metadata:{status:string}}>(
+   "SELECT metadata FROM audit_events WHERE agency_id=$1 AND action='agency.subscription.payment_reconciliation_checked' ORDER BY created_at ASC",
+   [thirdAgency.body.data.id]
+  );
+  expect(reconciliationHistory.rows.map(row=>row.metadata.status)).toEqual(['pending','succeeded']);
   const queryDuplicate=await payments.processQuery({agencyId:thirdAgency.body.data.id,paymentId:thirdAttempt.payment.id,resultCode:0,resultDescription:'Confirmed again',payload:{ResultCode:0}});
   expect(queryDuplicate.duplicate).toBe(true);
   const querySubscription=await pool.query('SELECT id FROM agency_subscriptions WHERE agency_id=$1',[thirdAgency.body.data.id]);
