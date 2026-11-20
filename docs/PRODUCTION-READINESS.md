@@ -54,8 +54,9 @@ This checklist separates implemented controls from external or incomplete releas
 - [x] Confirmed initial monthly KES prices: Starter KSh 2,500; Professional KSh 5,000; Business KSh 12,000. Plans are seeded inactive.
 - [x] Approve and seed Starter (25 listings/3 seats), Professional (100 listings/10 seats), and Business (500 listings/30 seats) quotas; plans remain inactive pending payment acceptance.
 - [x] Enforce listing/team-seat quotas for agencies with a current paid/trial subscription; drafts and published listings count, archived listings do not, and active members plus pending invitations consume seats.
-- [x] Require a current paid/trial subscription for new listings and team invitations; existing inventory remains readable. [ ] Define expiry/grace-period behavior and access restoration before public commercial launch.
-- [ ] Define trial policy, grace period, refund/cancellation terms, and API request quotas; paid API access remains a separate product.
+- [x] Require a current paid/trial subscription for new listings and team invitations; existing inventory remains readable.
+- [ ] Approve and implement the proposed expiry policy: at paid-period end, immediately block new listings and invitations while preserving access to existing inventory and enquiries; provide a 7-calendar-day renewal/support grace window; after that window keep the workspace read-only with data export available; restore write access only after a verified payment. No data is automatically deleted for non-payment.
+- [ ] Define trial eligibility, refunds, cancellation handling, and customer communications; paid API access remains a separate product.
 - [ ] Verify Daraja sandbox and production acceptance gates in [M-Pesa integration](MPESA-INTEGRATION.md); configure credentials only in the managed secret store.
 - [ ] Build API-key issuance/revocation, developer accounts, usage metering, per-plan quotas, and paid API access as the second commercial product.
 
@@ -73,6 +74,16 @@ This checklist separates implemented controls from external or incomplete releas
 - [x] Demo search is read-only.
 - [ ] Verify deployed demo, Swagger UI, and OpenAPI endpoints after deployment.
 - [ ] Check screenshots/sample records for secrets and personal/customer information.
+
+## Proposed operational service objectives (approval required)
+
+For the first controlled customer pilot, use these as planning targets—not achieved guarantees—until the operator, customer, and hosting plan approve them:
+
+- Recovery point objective (RPO): no more than 24 hours of data loss.
+- Recovery time objective (RTO): restore critical service within 8 hours.
+- Encrypted independent logical backup: at least daily, with a proposed 30-day retention window and a separate off-host copy.
+- Run a restore drill at least quarterly and after material backup/restore changes; record actual achieved RPO/RTO and evidence.
+- If the selected hosting tier or backup workflow cannot meet these targets, revise the customer SLA before onboarding.
 
 ## Release decision
 
