@@ -25,46 +25,11 @@ test -f "$BACKUP_FILE.sha256" || { echo "Backup checksum file not found" >&2; ex
   sha256sum --check "$(basename "$BACKUP_FILE").sha256"
 )
 
-# Never drop or clean an existing schema. Reject relations, routines, types,
-# non-default schemas, and database-level objects that are not covered by the
-# ordinary relation checks (for example large objects and event triggers).
-object_count="$(psql "$TARGET_DATABASE_URL" -X -v ON_ERROR_STOP=1 -Atqc "
-  SELECT count(*) FROM (
-    SELECT c.oid
-    FROM pg_class c
-    JOIN pg_namespace n ON n.oid = c.relnamespace
-    WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
-      AND c.relkind IN ('r', 'p', 'v', 'm', 'S', 'f')
-    UNION ALL
-    SELECT p.oid
-    FROM pg_proc p
-    JOIN pg_namespace n ON n.oid = p.pronamespace
-    WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
-    UNION ALL
-    SELECT t.oid
-    FROM pg_type t
-    JOIN pg_namespace n ON n.oid = t.typnamespace
-    WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
-    UNION ALL
-    SELECT n.oid
-    FROM pg_namespace n
-    WHERE n.nspname NOT IN ('pg_catalog', 'information_schema', 'public')
-    UNION ALL
-    SELECT oid FROM pg_largeobject_metadata
-    UNION ALL
-    SELECT oid FROM pg_event_trigger
-    UNION ALL
-    SELECT oid FROM pg_publication
-    UNION ALL
-    SELECT oid FROM pg_subscription
-    UNION ALL
-    SELECT oid FROM pg_foreign_data_wrapper
-    UNION ALL
-    SELECT oid FROM pg_foreign_server
-    UNION ALL
-    SELECT oid FROM pg_user_mapping
-  ) AS user_objects
-")"
+# Never drop or clean an existing schema. The SQL guard is shared with CI tests.
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+guard_sql="$script_dir/restore-target-guard.sql"
+test -f "$guard_sql" || { echo "Restore target guard SQL file is missing" >&2; exit 1; }
+object_count="$(psql "$TARGET_DATABASE_URL" -X -v ON_ERROR_STOP=1 -Atq -f "$guard_sql")"
 
 if [[ ! "$object_count" =~ ^[0-9]+$ ]] || [[ "$object_count" -ne 0 ]]; then
   echo "Refusing restore: target database contains $object_count user objects" >&2
