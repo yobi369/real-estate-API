@@ -43,12 +43,12 @@ export function createRateLimiter(options: RateLimitOptions): RequestHandler {
          VALUES($1,1,now()+($2::double precision * interval '1 millisecond'))
          ON CONFLICT(bucket_key) DO UPDATE SET
            request_count=CASE WHEN api_rate_limit_buckets.reset_at<=now()
-             THEN 1 ELSE api_rate_limit_buckets.request_count+1 END,
+             THEN 1 ELSE LEAST(api_rate_limit_buckets.request_count+1,$3::integer+1) END,
            reset_at=CASE WHEN api_rate_limit_buckets.reset_at<=now()
              THEN now()+($2::double precision * interval '1 millisecond')
              ELSE api_rate_limit_buckets.reset_at END
          RETURNING request_count,reset_at`,
-        [key, options.windowMs]
+        [key, options.windowMs, options.max]
       ).then(result => {
         const row = result.rows[0];
         if (!row) throw new Error('RATE_LIMIT_RESULT_MISSING');
