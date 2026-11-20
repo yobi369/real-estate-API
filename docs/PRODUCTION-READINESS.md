@@ -19,7 +19,7 @@ This checklist separates implemented controls from external or incomplete releas
 - [x] Security regression tests for headers, auth throttling, oversized JSON payload handling, enquiry routing, invitation lifecycle, agency membership authorization/auditing, and two-step ownership transfer. CI evidence is recorded in the latest workflow run.
 - [x] Dependency-free HTTP benchmark runner and documented evidence procedure; no production capacity claim has been established.
 - [x] CI workflow audits production dependencies and runs typecheck, tests, build, and lint on Node 22/24 with PostgreSQL 16.
-- [x] Encrypted PostgreSQL logical-backup and guarded empty-target restore scripts are available in `scripts/backup-postgres.sh` and `scripts/restore-postgres.sh`; see [PostgreSQL operations](POSTGRES-OPERATIONS.md). Tooling availability is not evidence of a completed backup or restore drill.
+- [x] Encrypted PostgreSQL logical-backup and guarded empty-target restore scripts are available in `scripts/backup-postgres.sh` and `scripts/restore-postgres.sh`; PR #12 adds CI integration coverage for encrypted backup, restore, and non-empty-target refusal. See [PostgreSQL operations](POSTGRES-OPERATIONS.md). CI coverage is not an off-host or production restore drill.
 
 ## Verified environment snapshot — 2026-11-20
 
@@ -35,7 +35,7 @@ This is a point-in-time, read-only audit. Database row counts were queried witho
 ## Required before customer production launch
 
 ### Infrastructure and database
-- [ ] Provision dedicated production PostgreSQL and a least-privilege DB role.
+- [x] Provisioned the Neon production branch and created a least-privilege runtime role; the Render runtime connection is not yet configured or verified, and the current hosting tier/capacity is not approved for a customer SLA.
 - [ ] Verify TLS settings for service and database connections in the target host.
 - [ ] Store a unique JWT secret and deployment credentials in a managed secret store.
 - [ ] Configure automated provider backups/retention and complete an independent encrypted off-host backup plus a restore drill.
