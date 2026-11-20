@@ -30,15 +30,15 @@ describe('subscription payment lifecycle',()=>{
   const agency=createdAgency.body.data.id as string;
   const payments=new SubscriptionPaymentRepository();
   const plan=await payments.getActivePlan('test-monthly');expect(plan).not.toBeNull();
-  const attempt=await payments.createAttempt(agency,plan!,'254712345678','billing-idempotency-key-0001');
-  expect(attempt.created).toBe(true);
   const concurrentRetries=await Promise.all([
-   payments.createAttempt(agency,plan!,'254712345678','billing-idempotency-key-concurrent'),
-   payments.createAttempt(agency,plan!,'254712345678','billing-idempotency-key-concurrent')
+   payments.createAttempt(agency,plan!,'254712345678','billing-idempotency-key-0001'),
+   payments.createAttempt(agency,plan!,'254712345678','billing-idempotency-key-0001')
   ]);
   expect(concurrentRetries.filter(result=>result.created)).toHaveLength(1);
   expect(concurrentRetries[0]!.payment.id).toBe(concurrentRetries[1]!.payment.id);
-  await expect(payments.createAttempt(agency,plan!,'254700000000','billing-idempotency-key-concurrent')).rejects.toThrow('IDEMPOTENCY_KEY_REUSED');
+  const attempt=concurrentRetries.find(result=>result.created)??concurrentRetries[0]!;
+  expect(attempt.created).toBe(true);
+  await expect(payments.createAttempt(agency,plan!,'254700000000','billing-idempotency-key-0001')).rejects.toThrow('IDEMPOTENCY_KEY_REUSED');
   await expect(payments.createAttempt(agency,plan!,'254712345678','billing-idempotency-key-0002')).rejects.toThrow('PAYMENT_ALREADY_PENDING');
   const checkout='checkout-'+randomUUID();
   const pending=await payments.attachCheckout(attempt.payment.id,'merchant-'+randomUUID(),checkout);
