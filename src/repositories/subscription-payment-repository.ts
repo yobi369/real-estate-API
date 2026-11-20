@@ -23,7 +23,22 @@ export class SubscriptionPaymentRepository {
    await client.query('INSERT INTO subscription_payments(id,agency_id,plan_id,provider,idempotency_key,phone_number,amount_minor,currency,status) VALUES($1,$2,$3,\'mpesa\',$4,$5,$6,\'KES\',\'initiated\') RETURNING *',[id,agencyId,plan.id,idempotencyKey,phone,plan.priceMinor]);
    await client.query('COMMIT');
    return {payment:{id,agencyId,planId:plan.id,planCode:plan.code,amountMinor:plan.priceMinor,currency:'KES',status:'initiated',checkoutRequestId:null,merchantRequestId:null},created:true};
-  }catch(error){await client.query('ROLLBACK');if(typeof error==='object'&&error!==null&&'code'in error&&(error as {code?:unknown}).code==='23505')throw new Error('PAYMENT_ALREADY_PENDING');throw error;}
+  }catch(error){
+   await client.query('ROLLBACK');
+   if(typeof error==='object'&&error!==null&&'code'in error&&(error as {code?:unknown}).code==='23505'){
+    const constraint='constraint'in error?String((error as {constraint?:unknown}).constraint??''):'';
+    if(constraint==='subscription_payments_agency_id_idempotency_key_key'){
+     const existing=await pool.query('SELECT p.*,s.code AS plan_code FROM subscription_payments p JOIN subscription_plans s ON s.id=p.plan_id WHERE p.agency_id=$1 AND p.idempotency_key=$2',[agencyId,idempotencyKey]);
+     if(existing.rows[0]){
+      const row=existing.rows[0];
+      if(String(row.plan_id)!==plan.id||String(row.phone_number)!==phone||Number(row.amount_minor)!==plan.priceMinor)throw new Error('IDEMPOTENCY_KEY_REUSED');
+      return {payment:this.mapPayment(row),created:false};
+     }
+    }
+    throw new Error('PAYMENT_ALREADY_PENDING');
+   }
+   throw error;
+  }
   finally{client.release();}
  }
  async attachCheckout(paymentId:string,merchantRequestId:string,checkoutRequestId:string):Promise<PaymentAttempt>{
