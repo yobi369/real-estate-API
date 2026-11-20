@@ -4,7 +4,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import { createRequire } from 'node:module';
 import swaggerUi from 'swagger-ui-express';
-import { randomUUID } from 'node:crypto';
+import { randomUUID,timingSafeEqual } from 'node:crypto';
 import { config } from './config.js';
 import { propertyInputSchema,propertyQuerySchema } from './domain/property.js';
 import { inquiryInputSchema } from './domain/inquiry.js';
@@ -13,6 +13,9 @@ import { InquiryRepository } from './repositories/inquiry-repository.js';
 import { AgencyRepository } from './repositories/agency-repository.js';
 import { AgencyInvitationRepository, type InvitationRole } from './repositories/agency-invitation-repository.js';
 import { AgencyOwnershipTransferRepository } from './repositories/agency-ownership-transfer-repository.js';
+import { SubscriptionRepository } from './repositories/subscription-repository.js';
+import { SubscriptionPaymentRepository } from './repositories/subscription-payment-repository.js';
+import { initiateStkPush,isMpesaConfigured,normalizeKenyanPhone,parseStkCallback,queryStkPush } from './services/mpesa.js';
 import { z } from 'zod';
 import { demoProperties } from './demo-data.js';
 import { pool } from './db.js';
@@ -27,10 +30,13 @@ export const inquiryRepository=new InquiryRepository();
 export const agencyRepository=new AgencyRepository();
 export const agencyInvitationRepository=new AgencyInvitationRepository();
 export const agencyOwnershipTransferRepository=new AgencyOwnershipTransferRepository();
+export const subscriptionRepository=new SubscriptionRepository();
+export const subscriptionPaymentRepository=new SubscriptionPaymentRepository();
 const invitationCreateSchema=z.object({email:z.string().trim().email().max(254).transform(v=>v.toLowerCase()),role:z.enum(['admin','agent','viewer'])}).strict();
 const invitationAcceptSchema=z.object({token:z.string().min(32).max(128)}).strict();
 const ownershipTransferCreateSchema=z.object({targetUserId:z.string().uuid()}).strict();
 const agencyCreateSchema=z.object({name:z.string().trim().min(2).max(160)}).strict();
+const stkPushSchema=z.object({planCode:z.string().trim().min(2).max(60),phoneNumber:z.string().trim().min(8).max(20)}).strict();
 const resolveActiveAgency=async(req:express.Request,res:express.Response):Promise<{id:string;role:'owner'|'admin'|'agent'|'viewer'}|null>=>{
  const agencyId=req.header('x-agency-id');
  if(!agencyId||!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(agencyId)){
@@ -49,6 +55,7 @@ const toPublicProperty=(property:StoredProperty)=>{const {ownerId,agencyId,...pu
 const authBootstrapRateLimit=createRateLimiter({windowMs:15*60*1000,max:5});
 const authRegisterRateLimit=createRateLimiter({windowMs:15*60*1000,max:10});
 const authLoginRateLimit=createRateLimiter({windowMs:15*60*1000,max:10});
+const billingCheckoutRateLimit=createRateLimiter({windowMs:15*60*1000,max:5});
 const publicSearchRateLimit=createRateLimiter({windowMs:60*1000,max:120});
 const inquiryRateLimits=new Map<string,{count:number;resetAt:number}>();
 const inquiryRateLimit:express.RequestHandler=(req,res,next)=>{
@@ -64,10 +71,10 @@ const inquiryRateLimit:express.RequestHandler=(req,res,next)=>{
 app.disable('x-powered-by');app.set('trust proxy',1);app.use(helmet());
 app.use(cors({origin:config.CORS_ORIGIN.split(',').map(v=>v.trim()),credentials:false}));
 app.use(express.json({limit:'1mb',strict:true}));
-app.use(pinoHttp({level:config.LOG_LEVEL,genReqId:(req,res)=>{const h=req.headers['x-request-id'];const id=typeof h==='string'&&/^[a-zA-Z0-9._-]{1,100}$/.test(h)?h:randomUUID();res.setHeader('x-request-id',id);return id;},redact:['req.headers.authorization','req.headers.cookie','req.headers.x-bootstrap-token']}));
+app.use(pinoHttp({level:config.LOG_LEVEL,genReqId:(req,res)=>{const h=req.headers['x-request-id'];const id=typeof h==='string'&&/^[a-zA-Z0-9._-]{1,100}$/.test(h)?h:randomUUID();res.setHeader('x-request-id',id);return id;},redact:['req.headers.authorization','req.headers.cookie','req.headers.x-bootstrap-token','req.url']}));
 const spec={
- openapi:'3.1.0',info:{title:'Real Estate API',version:'1.2.0',description:'Property, short-stay and land inventory with authenticated listing management and persisted customer enquiries.'},servers:[{url:'/'}],
- tags:[{name:'Properties',description:'Search and manage property listings.'},{name:'Inquiries',description:'Receive and review customer enquiries.'},{name:'Agencies',description:'Create and discover agency workspaces.'},{name:'Authentication',description:'Register and authenticate listing operators.'},{name:'Health',description:'Service health and readiness.'}],
+ openapi:'3.1.0',info:{title:'Real Estate API',version:'1.3.0',description:'Property, short-stay and land inventory with authenticated listing management and persisted customer enquiries.'},servers:[{url:'/'}],
+ tags:[{name:'Properties',description:'Search and manage property listings.'},{name:'Inquiries',description:'Receive and review customer enquiries.'},{name:'Agencies',description:'Create and discover agency workspaces.'},{name:'Authentication',description:'Register and authenticate listing operators.'},{name:'Health',description:'Service health and readiness.'},{name:'Billing',description:'Agency subscription plans and payment history.'}],
  paths:{
   '/health/live':{get:{tags:['Health'],summary:'Check process liveness',responses:{'200':{description:'Process is alive'}}}},
   '/health/ready':{get:{tags:['Health'],summary:'Check database readiness',responses:{'200':{description:'Database is ready'},'503':{description:'Database unavailable or not configured'}}}},
@@ -75,6 +82,12 @@ const spec={
   '/api/v1/auth/register':{post:{tags:['Authentication'],summary:'Register a listing operator',requestBody:{required:true,content:{'application/json':{schema:{type:'object',required:['email','password'],properties:{email:{type:'string',format:'email'},password:{type:'string',minLength:12}}}}}},responses:{'201':{description:'Account created'},'400':{description:'Invalid registration input'},'409':{description:'Email already registered'}}}},
   '/api/v1/auth/login':{post:{tags:['Authentication'],summary:'Authenticate a listing operator',requestBody:{required:true,content:{'application/json':{schema:{type:'object',required:['email','password'],properties:{email:{type:'string',format:'email'},password:{type:'string'}}}}}},responses:{'200':{description:'Authenticated'},'401':{description:'Invalid credentials'}}}},
   '/api/v1/agencies':{post:{tags:['Agencies'],summary:'Create an agency workspace and become its owner',security:[{bearerAuth:[]}],requestBody:{required:true,content:{'application/json':{schema:{type:'object',additionalProperties:false,required:['name'],properties:{name:{type:'string',minLength:2,maxLength:160}}}}}},responses:{'201':{description:'Agency created'},'400':{description:'Invalid agency name'},'401':{description:'Authentication required'},'503':{description:'Persistent storage required'}}}},
+  '/api/v1/billing/mpesa/stk-push':{post:{tags:['Billing'],summary:'Start an idempotent M-Pesa subscription checkout',security:[{bearerAuth:[]}],parameters:[{name:'X-Agency-ID',in:'header',required:true,schema:{type:'string',format:'uuid'}},{name:'Idempotency-Key',in:'header',required:true,schema:{type:'string',minLength:16,maxLength:128}}],responses:{'202':{description:'STK prompt accepted; payment remains pending'},'403':{description:'Agency owner or admin permission required'},'503':{description:'Daraja is not configured'}}}},
+  '/api/v1/webhooks/mpesa/{secret}':{post:{tags:['Billing'],summary:'Receive Daraja STK callback using the configured unguessable callback path',parameters:[{name:'secret',in:'path',required:true,schema:{type:'string'}}],responses:{'200':{description:'Callback accepted'},'404':{description:'Callback route not found'}}}},
+  '/api/v1/billing/plans':{get:{tags:['Billing'],summary:'List active agency subscription plans',responses:{'200':{description:'Available plans'},'503':{description:'Billing persistence unavailable'}}}},
+  '/api/v1/billing/payments/{paymentId}/reconcile':{post:{tags:['Billing'],summary:'Reconcile a pending payment using Daraja STK status query',security:[{bearerAuth:[]}],parameters:[{name:'paymentId',in:'path',required:true,schema:{type:'string',format:'uuid'}},{name:'X-Agency-ID',in:'header',required:true,schema:{type:'string',format:'uuid'}}],responses:{'200':{description:'Payment reconciliation result'},'403':{description:'Agency owner or admin permission required'},'502':{description:'Daraja status query failed'}}}},
+  '/api/v1/billing/subscription/cancel':{post:{tags:['Billing'],summary:'Schedule cancellation at the end of the current billing period',security:[{bearerAuth:[]}],parameters:[{name:'X-Agency-ID',in:'header',required:true,schema:{type:'string',format:'uuid'}}],responses:{'200':{description:'Cancellation scheduled'},'403':{description:'Agency owner or admin permission required'},'409':{description:'No active subscription'}}}},
+  '/api/v1/billing/subscription':{get:{tags:['Billing'],summary:'Get the selected agency subscription and payment history',security:[{bearerAuth:[]}],parameters:[{name:'X-Agency-ID',in:'header',required:true,schema:{type:'string',format:'uuid'}}],responses:{'200':{description:'Subscription and recent payment history'},'401':{description:'Authentication required'},'403':{description:'Agency owner or admin permission required'}}}},
   '/api/v1/agencies/properties':{get:{tags:['Agencies'],summary:'List all listings, including drafts and archived records, in the selected agency',security:[{bearerAuth:[]}],parameters:[{name:'X-Agency-ID',in:'header',required:true,schema:{type:'string',format:'uuid'}},{name:'page',in:'query',schema:{type:'integer',minimum:1}},{name:'limit',in:'query',schema:{type:'integer',minimum:1,maximum:100}}],responses:{'200':{description:'Agency-scoped private inventory'},'401':{description:'Authentication required'},'403':{description:'Agency membership required'}}}},
   '/api/v1/agencies/me':{get:{tags:['Agencies'],summary:'List the authenticated user\'s active agencies',security:[{bearerAuth:[]}],responses:{'200':{description:'Agency memberships'},'401':{description:'Authentication required'},'503':{description:'Persistent storage required'}}}},
   '/api/v1/agencies/members':{get:{tags:['Agencies'],summary:'List members in the selected agency (owner/admin only)',security:[{bearerAuth:[]}],parameters:[{name:'X-Agency-ID',in:'header',required:true,schema:{type:'string',format:'uuid'}}],responses:{'200':{description:'Agency members'},'403':{description:'Owner/admin permission required'}}}},
@@ -95,7 +108,7 @@ const spec={
  }}
 };
 app.get('/health/live',(_req,res)=>res.json({status:'ok',service:'real-estate-api'}));
-app.get('/health/ready',async(_req,res)=>{if(!pool)return res.status(503).json({status:'degraded',persistence:'in-memory-development-adapter'});try{const result=await pool.query<{ready:boolean}>(`SELECT to_regclass('public.users') IS NOT NULL AND to_regclass('public.properties') IS NOT NULL AND to_regclass('public.inquiries') IS NOT NULL AND to_regclass('public.agencies') IS NOT NULL AND to_regclass('public.agency_memberships') IS NOT NULL AND to_regclass('public.agency_invitations') IS NOT NULL AND to_regclass('public.agency_ownership_transfers') IS NOT NULL AND to_regclass('public.audit_events') IS NOT NULL AND EXISTS (SELECT 1 FROM schema_migrations WHERE version=3) AS ready`);if(!result.rows[0]?.ready)return res.status(503).json({status:'degraded',persistence:'postgresql',schema:'pending'});return res.status(200).json({status:'ready',persistence:'postgresql',schema:'current'});}catch{return res.status(503).json({status:'degraded',persistence:'postgresql',schema:'unavailable'});}});
+app.get('/health/ready',async(_req,res)=>{if(!pool)return res.status(503).json({status:'degraded',persistence:'in-memory-development-adapter'});try{const result=await pool.query<{ready:boolean}>(`SELECT to_regclass('public.users') IS NOT NULL AND to_regclass('public.properties') IS NOT NULL AND to_regclass('public.inquiries') IS NOT NULL AND to_regclass('public.agencies') IS NOT NULL AND to_regclass('public.agency_memberships') IS NOT NULL AND to_regclass('public.agency_invitations') IS NOT NULL AND to_regclass('public.agency_ownership_transfers') IS NOT NULL AND to_regclass('public.audit_events') IS NOT NULL AND to_regclass('public.subscription_plans') IS NOT NULL AND to_regclass('public.agency_subscriptions') IS NOT NULL AND to_regclass('public.subscription_payments') IS NOT NULL AND EXISTS (SELECT 1 FROM schema_migrations WHERE version=4) AS ready`);if(!result.rows[0]?.ready)return res.status(503).json({status:'degraded',persistence:'postgresql',schema:'pending'});return res.status(200).json({status:'ready',persistence:'postgresql',schema:'current'});}catch{return res.status(503).json({status:'degraded',persistence:'postgresql',schema:'unavailable'});}});
 app.get('/demo/properties',publicSearchRateLimit,(req,res)=>{const parsed=propertyQuerySchema.safeParse(req.query);if(!parsed.success)return res.status(400).json({error:{code:'VALIDATION_ERROR',message:'Query parameters are invalid'}});const q=parsed.data;const needle=q.search?.toLocaleLowerCase();const matches=demoProperties.filter(p=>(!q.city||p.city.toLocaleLowerCase()===q.city.toLocaleLowerCase())&&(!q.propertyType||p.propertyType===q.propertyType)&&(!q.transactionType||p.transactionType===q.transactionType)&&(q.minPrice===undefined||p.price>=q.minPrice)&&(q.maxPrice===undefined||p.price<=q.maxPrice)&&(!needle||`${p.title} ${p.description} ${p.city}`.toLocaleLowerCase().includes(needle))).sort((a,b)=>b.createdAt.localeCompare(a.createdAt));const start=(q.page-1)*q.limit;return res.json({data:{items:matches.slice(start,start+q.limit),total:matches.length,page:q.page,limit:q.limit,notice:'Fictional sample data for demonstration only. Not live property listings.'}});});
 app.get('/openapi.json',(_req,res)=>res.json(spec));app.use('/docs',swaggerUi.serve,swaggerUi.setup(spec));
 app.post('/api/v1/admin/bootstrap',authBootstrapRateLimit,async(req,res)=>{const result=await bootstrapAdmin(req.body,req.header('x-bootstrap-token')??'');if('error'in result){const status=result.error==='DISABLED'?404:result.error==='EXISTS'?409:400;return res.status(status).json({error:{code:result.error,message:result.error==='DISABLED'?'Bootstrap is unavailable':result.error==='EXISTS'?'An administrator already exists':'Administrator details are invalid'}});}return res.status(201).json({data:{user:result.principal,token:result.token,tokenType:'Bearer',expiresIn:config.JWT_TTL_SECONDS}});});
@@ -182,6 +195,8 @@ app.post('/api/v1/agencies/invitations',authenticate,async(req,res)=>{
  }catch(error){
   if(error instanceof Error&&error.message==='PERSISTENCE_REQUIRED')return res.status(503).json({error:{code:'PERSISTENCE_REQUIRED',message:'Agency invitations require PostgreSQL persistence'}});
   if(error instanceof Error&&error.message==='INVITATION_ALREADY_PENDING')return res.status(409).json({error:{code:'INVITATION_ALREADY_PENDING',message:'An active invitation already exists for this email'}});
+  if(error instanceof Error&&error.message==='SUBSCRIPTION_REQUIRED')return res.status(402).json({error:{code:'SUBSCRIPTION_REQUIRED',message:'An active agency subscription is required to invite team members'}});
+  if(error instanceof Error&&error.message==='TEAM_LIMIT_REACHED')return res.status(409).json({error:{code:'TEAM_LIMIT_REACHED',message:'This agency has reached its team member allowance'}});
   if(error instanceof Error&&error.message==='INVITATION_ROLE_FORBIDDEN')return res.status(403).json({error:{code:'INVITATION_ROLE_FORBIDDEN',message:'Admins may only invite agents and viewers'}});
   if(error instanceof Error&&error.message==='ACTOR_NOT_AUTHORIZED')return res.status(403).json({error:{code:'FORBIDDEN',message:'Your agency membership does not permit this operation'}});
   throw error;
@@ -245,6 +260,76 @@ app.delete('/api/v1/agencies/invitations/:id',authenticate,async(req,res)=>{
   throw error;
  }
 });
+app.post('/api/v1/billing/mpesa/stk-push',billingCheckoutRateLimit,authenticate,async(req,res)=>{
+ const agency=await resolveActiveAgency(req,res);if(!agency)return;
+ if(!['owner','admin'].includes(agency.role))return res.status(403).json({error:{code:'FORBIDDEN',message:'Agency owner or admin permission is required to manage billing'}});
+ if(!isMpesaConfigured())return res.status(503).json({error:{code:'MPESA_NOT_CONFIGURED',message:'M-Pesa checkout is not configured for this environment'}});
+ const parsed=stkPushSchema.safeParse(req.body);if(!parsed.success)return res.status(400).json({error:{code:'VALIDATION_ERROR',message:'Checkout payload is invalid',details:parsed.error.flatten()}});
+ const idempotencyKey=(req.header('idempotency-key')??'').trim();if(idempotencyKey.length<16||idempotencyKey.length>128)return res.status(400).json({error:{code:'IDEMPOTENCY_KEY_REQUIRED',message:'Provide an Idempotency-Key between 16 and 128 characters'}});
+ let phone:string;try{phone=normalizeKenyanPhone(parsed.data.phoneNumber);}catch{return res.status(400).json({error:{code:'INVALID_MPESA_PHONE',message:'Enter a valid Kenyan mobile number'}});}
+ try{
+  const plan=await subscriptionPaymentRepository.getActivePlan(parsed.data.planCode);if(!plan)return res.status(404).json({error:{code:'PLAN_NOT_FOUND',message:'The selected subscription plan is not available'}});
+  if(plan.priceMinor%100!==0)return res.status(409).json({error:{code:'PLAN_PRICE_NOT_SUPPORTED',message:'M-Pesa checkout requires a whole-KES plan price'}});
+  const attempt=await subscriptionPaymentRepository.createAttempt(agency.id,plan,phone,idempotencyKey);
+  if(!attempt.created){if(attempt.payment.status==='pending'||attempt.payment.status==='succeeded')return res.status(200).json({data:{paymentId:attempt.payment.id,status:attempt.payment.status,checkoutRequestId:attempt.payment.checkoutRequestId}});return res.status(409).json({error:{code:'PAYMENT_ALREADY_PROCESSING',message:'This idempotency key already has a checkout attempt'}});}
+  try{
+   const accepted=await initiateStkPush({phoneNumber:phone,amountMinor:plan.priceMinor,agencyId:agency.id});
+   const payment=await subscriptionPaymentRepository.attachCheckout(attempt.payment.id,accepted.merchantRequestId,accepted.checkoutRequestId);
+   return res.status(202).json({data:{paymentId:payment.id,status:payment.status,checkoutRequestId:payment.checkoutRequestId,customerMessage:accepted.customerMessage}});
+  }catch(error){
+   const reason=error instanceof Error?error.message:'M-Pesa request failed';
+   if(reason==='MPESA_OUTCOME_UNKNOWN')return res.status(503).json({error:{code:'MPESA_OUTCOME_UNKNOWN',message:'Safaricom response was not conclusive. This attempt is held to prevent a duplicate charge; do not start another checkout. Contact support for reconciliation.'}});
+   await subscriptionPaymentRepository.markFailed(attempt.payment.id,'STK_REQUEST_FAILED',reason);
+   return res.status(502).json({error:{code:'MPESA_REQUEST_FAILED',message:'Safaricom rejected the payment request. No subscription has been activated.'}});
+  }
+ }catch(error){
+  if(error instanceof Error&&error.message==='ACTIVE_SUBSCRIPTION')return res.status(409).json({error:{code:'ACTIVE_SUBSCRIPTION',message:'This agency already has an active subscription for the current period'}});
+  if(error instanceof Error&&error.message==='PAYMENT_ALREADY_PENDING')return res.status(409).json({error:{code:'PAYMENT_ALREADY_PENDING',message:'An M-Pesa checkout is already pending for this agency'}});
+  throw error;
+ }
+});
+app.post('/api/v1/webhooks/mpesa/:secret',async(req,res)=>{
+ const expectedCallbackSecret=config.MPESA_CALLBACK_SECRET??'';const suppliedCallbackSecret=String(req.params.secret??'');
+ const expectedBytes=Buffer.from(expectedCallbackSecret);const suppliedBytes=Buffer.from(suppliedCallbackSecret);
+ if(!expectedCallbackSecret||expectedBytes.length!==suppliedBytes.length||!timingSafeEqual(expectedBytes,suppliedBytes))return res.status(404).json({error:{code:'NOT_FOUND',message:'Callback route was not found'}});
+ const callback=parseStkCallback(req.body);
+ if(!callback)return res.status(400).json({error:{code:'INVALID_MPESA_CALLBACK',message:'Callback payload is invalid'}});
+ const result=await subscriptionPaymentRepository.processCallback(callback);
+ return res.status(200).json({ResultCode:0,ResultDesc:result.found?'Callback accepted':'No matching payment'});
+});
+app.get('/api/v1/billing/plans',async(_req,res)=>{
+ try{return res.json({data:{items:await subscriptionRepository.listActivePlans()}});}
+ catch(error){if(error instanceof Error&&error.message==='PERSISTENCE_REQUIRED')return res.status(503).json({error:{code:'PERSISTENCE_REQUIRED',message:'Billing plans require PostgreSQL persistence'}});throw error;}
+});
+app.post('/api/v1/billing/payments/:paymentId/reconcile',billingCheckoutRateLimit,authenticate,async(req,res)=>{
+ const agency=await resolveActiveAgency(req,res);if(!agency)return;
+ if(!['owner','admin'].includes(agency.role))return res.status(403).json({error:{code:'FORBIDDEN',message:'Agency owner or admin permission is required to reconcile billing'}});
+ if(!isMpesaConfigured())return res.status(503).json({error:{code:'MPESA_NOT_CONFIGURED',message:'M-Pesa reconciliation is not configured for this environment'}});
+ const paymentId=z.string().uuid().safeParse(req.params.paymentId);if(!paymentId.success)return res.status(400).json({error:{code:'INVALID_PAYMENT_ID',message:'Payment identifier must be a UUID'}});
+ const payment=await subscriptionPaymentRepository.getForReconciliation(agency.id,paymentId.data);
+ if(!payment)return res.status(404).json({error:{code:'PAYMENT_NOT_FOUND',message:'Payment was not found in this agency'}});
+ if(payment.status!=='pending'||!payment.checkoutRequestId)return res.json({data:{paymentId:payment.id,status:payment.status}});
+ try{
+  const query=await queryStkPush(payment.checkoutRequestId);
+  const result=await subscriptionPaymentRepository.processQuery({agencyId:agency.id,paymentId:payment.id,actorUserId:req.principal!.id,resultCode:query.resultCode,resultDescription:query.resultDescription,payload:query});
+  return res.json({data:{paymentId:payment.id,status:result.status,resultDescription:query.resultDescription}});
+ }catch{return res.status(502).json({error:{code:'MPESA_QUERY_FAILED',message:'Safaricom could not confirm this payment yet. It remains pending.'}});}
+});
+app.post('/api/v1/billing/subscription/cancel',authenticate,async(req,res)=>{
+ const agency=await resolveActiveAgency(req,res);if(!agency)return;
+ if(!['owner','admin'].includes(agency.role))return res.status(403).json({error:{code:'FORBIDDEN',message:'Agency owner or admin permission is required to manage billing'}});
+ const scheduled=await subscriptionRepository.scheduleCancellation(agency.id,req.principal!.id);
+ if(!scheduled)return res.status(409).json({error:{code:'NO_ACTIVE_SUBSCRIPTION',message:'There is no active subscription to cancel'}});
+ return res.json({data:{cancelAtPeriodEnd:true}});
+});
+app.get('/api/v1/billing/subscription',authenticate,async(req,res)=>{
+ const agency=await resolveActiveAgency(req,res);if(!agency)return;
+ if(!['owner','admin'].includes(agency.role))return res.status(403).json({error:{code:'FORBIDDEN',message:'Agency owner or admin permission is required to view billing'}});
+ try{
+  const [subscription,payments]=await Promise.all([subscriptionRepository.getCurrent(agency.id),subscriptionRepository.listPayments(agency.id)]);
+  return res.json({data:{subscription,payments}});
+ }catch(error){if(error instanceof Error&&error.message==='PERSISTENCE_REQUIRED')return res.status(503).json({error:{code:'PERSISTENCE_REQUIRED',message:'Billing records require PostgreSQL persistence'}});throw error;}
+});
 app.get('/api/v1/agencies/properties',authenticate,async(req,res)=>{
  const agency=await resolveActiveAgency(req,res);if(!agency)return;
  const parsed=propertyQuerySchema.safeParse(req.query);
@@ -283,7 +368,7 @@ app.get('/api/v1/media/:id',async(req,res)=>{
  res.setHeader('Cache-Control','public, max-age=31536000, immutable');res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Cross-Origin-Resource-Policy','cross-origin');
  return res.status(200).send(asset.data);
 });
-app.post('/api/v1/properties',authenticate,async(req,res)=>{const agency=await resolveActiveAgency(req,res);if(!agency)return;if(!['owner','admin','agent'].includes(agency.role))return res.status(403).json({error:{code:'FORBIDDEN',message:'Agency listing permission is required'}});const parsed=propertyInputSchema.safeParse(req.body);if(!parsed.success)return res.status(400).json({error:{code:'VALIDATION_ERROR',message:'Property payload is invalid',details:parsed.error.flatten()}});const p=await propertyRepository.create(parsed.data,req.principal!.id,agency.id);return res.status(201).location(`/api/v1/properties/${p.id}`).json({data:toPublicProperty(p)});});
+app.post('/api/v1/properties',authenticate,async(req,res)=>{const agency=await resolveActiveAgency(req,res);if(!agency)return;if(!['owner','admin','agent'].includes(agency.role))return res.status(403).json({error:{code:'FORBIDDEN',message:'Agency listing permission is required'}});const parsed=propertyInputSchema.safeParse(req.body);if(!parsed.success)return res.status(400).json({error:{code:'VALIDATION_ERROR',message:'Property payload is invalid',details:parsed.error.flatten()}});try{const p=await propertyRepository.create(parsed.data,req.principal!.id,agency.id);return res.status(201).location(`/api/v1/properties/${p.id}`).json({data:toPublicProperty(p)});}catch(error){if(error instanceof Error&&error.message==='SUBSCRIPTION_REQUIRED')return res.status(402).json({error:{code:'SUBSCRIPTION_REQUIRED',message:'An active agency subscription is required to create listings'}});if(error instanceof Error&&error.message==='LISTING_LIMIT_REACHED')return res.status(409).json({error:{code:'LISTING_LIMIT_REACHED',message:'This agency has reached its active listing allowance'}});throw error;}});
 app.patch('/api/v1/properties/:id',authenticate,async(req,res)=>{const agency=await resolveActiveAgency(req,res);if(!agency)return;const current=await propertyRepository.getById(String(req.params.id),agency.id);if(!current)return res.status(404).json({error:{code:'PROPERTY_NOT_FOUND',message:'Property was not found in this agency'}});if(!(agency.role==='owner'||agency.role==='admin'||(agency.role==='agent'&&current.ownerId===req.principal!.id)))return res.status(403).json({error:{code:'FORBIDDEN',message:'You may only modify listings permitted by your agency role'}});const parsed=propertyInputSchema.safeParse(req.body);if(!parsed.success)return res.status(400).json({error:{code:'VALIDATION_ERROR',message:'Property payload is invalid',details:parsed.error.flatten()}});const updated=await propertyRepository.update(String(req.params.id),parsed.data,agency.id,req.principal!.id);return updated?res.json({data:toPublicProperty(updated)}):res.status(404).json({error:{code:'PROPERTY_NOT_FOUND',message:'Property was not found in this agency'}});});
 app.patch('/api/v1/properties/:id/publication',authenticate,async(req,res)=>{
  const agency=await resolveActiveAgency(req,res);if(!agency)return;

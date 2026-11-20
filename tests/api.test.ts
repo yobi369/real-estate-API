@@ -1,22 +1,169 @@
 import {beforeEach,describe,expect,it} from 'vitest';
 import request from 'supertest';
+import {randomUUID} from 'node:crypto';
 import {app,propertyRepository} from '../src/app.js';
 import {resetMemoryUsersForTests} from '../src/auth.js';
 import {config} from '../src/config.js';
 import {migrate,pool} from '../src/db.js';
 import {PropertyRepository} from '../src/repositories/property-repository.js';
+import {SubscriptionPaymentRepository} from '../src/repositories/subscription-payment-repository.js';
 const sample={title:'Coastal family home',description:'Bright home near local amenities.',price:12500000,currency:'KES',propertyType:'house',transactionType:'sale',bedrooms:3,bathrooms:2,city:'Mombasa',country:'Kenya',imageUrls:[]};
 const account=(email:string)=>({email,password:'StrongPassword123'});
 let registerRequestNumber=0;
 async function register(email:string){const r=await request(app).post('/api/v1/auth/register').set('X-Forwarded-For',`198.51.100.${++registerRequestNumber}`).send(account(email));expect(r.status).toBe(201);return r.body.data.token as string;}
 let bootstrapRequestNumber=0;
 async function bootstrap(email:string){const r=await request(app).post('/api/v1/admin/bootstrap').set('x-bootstrap-token',config.ADMIN_BOOTSTRAP_TOKEN ?? '').set('X-Forwarded-For',`192.0.2.${++bootstrapRequestNumber}`).send(account(email));expect(r.status).toBe(201);return r.body.data.token as string;}
-async function agencyId(token:string){const r=await request(app).get('/api/v1/agencies/me').set('Authorization',`Bearer ${token}`);expect(r.status).toBe(200);expect(r.body.data.items.length).toBeGreaterThan(0);return r.body.data.items[0].id as string;}
+async function agencyId(token:string,withSubscription=true){const r=await request(app).get('/api/v1/agencies/me').set('Authorization','Bearer '+token);expect(r.status).toBe(200);expect(r.body.data.items.length).toBeGreaterThan(0);const agency=r.body.data.items[0].id as string;if(pool&&withSubscription){const planId=randomUUID();const plan=await pool.query<{id:string}>("INSERT INTO subscription_plans(id,code,name,price_minor,billing_interval,max_listings,max_members,is_active) VALUES($1,$2,'Test Unlimited',100,'month',NULL,NULL,false) ON CONFLICT(code) DO UPDATE SET is_active=false,max_listings=NULL,max_members=NULL RETURNING id",[planId,'test-unlimited-'+agency.slice(0,8)]);await pool.query("INSERT INTO agency_subscriptions(id,agency_id,plan_id,status,provider,current_period_start,current_period_end) SELECT $1,$2,$3,'active','manual',now(),now()+interval '30 days' WHERE NOT EXISTS(SELECT 1 FROM agency_subscriptions WHERE agency_id=$2 AND status IN ('active','trialing'))",[randomUUID(),agency,plan.rows[0]!.id]);}return agency;}
 async function publishListing(token:string,id:string,status='published'){return request(app).patch(`/api/v1/properties/${id}/publication`).set('Authorization',`Bearer ${token}`).set('X-Agency-ID',await agencyId(token)).send({status});}
-beforeEach(async()=>{await migrate();await propertyRepository.clear();resetMemoryUsersForTests();if(pool)await pool.query('TRUNCATE TABLE properties, users CASCADE');});
+beforeEach(async()=>{await migrate();await propertyRepository.clear();resetMemoryUsersForTests();if(pool){await pool.query('TRUNCATE TABLE subscription_payments,agency_subscriptions CASCADE');await pool.query("DELETE FROM subscription_plans WHERE code='test-monthly'");await pool.query('TRUNCATE TABLE properties, users CASCADE');}});
 describe('buyer demo',()=>{it('serves the interactive demo page and static assets',async()=>{expect((await request(app).get('/demo/')).status).toBe(200);expect((await request(app).get('/demo/app.js')).status).toBe(200);});it('serves the authenticated agency console shell and assets',async()=>{expect((await request(app).get('/console/')).status).toBe(200);expect((await request(app).get('/console/app.js')).status).toBe(200);expect((await request(app).get('/console/style.css')).status).toBe(200);});it('returns isolated fictional sample listings and filters them',async()=>{const all=await request(app).get('/demo/properties');expect(all.status).toBe(200);expect(all.body.data.total).toBeGreaterThan(0);expect(all.body.data.notice).toContain('Fictional sample data');const machakos=await request(app).get('/demo/properties?city=Machakos');expect(machakos.body.data.total).toBe(1);expect(machakos.body.data.items[0].city).toBe('Machakos');const land=await request(app).get('/demo/properties?propertyType=land');expect(land.body.data.items.every((p:{propertyType:string})=>p.propertyType==='land')).toBe(true);});it('does not write demo records into the operational property repository',async()=>{const before=await propertyRepository.list({page:1,limit:100});await request(app).get('/demo/properties');const after=await propertyRepository.list({page:1,limit:100});expect(after.total).toBe(before.total);});});
 describe('health/docs',()=>{it('reports liveness',async()=>{expect((await request(app).get('/health/live')).body.status).toBe('ok');});it('reports readiness only after the required tenancy schema is present',async()=>{const response=await request(app).get('/health/ready');expect(response.status).toBe(pool?200:503);if(pool)expect(response.body.schema).toBe('current');});it('serves OpenAPI and Swagger UI',async()=>{expect((await request(app).get('/openapi.json')).status).toBe(200);expect((await request(app).get('/docs/')).status).toBe(200);});});
 describe('authentication and authorization',()=>{it('requires a bearer token to create listings',async()=>{expect((await request(app).post('/api/v1/properties').send(sample)).status).toBe(401);});it('requires a verified agency context to publish listings',async()=>{const token=await bootstrap('context@example.com');expect((await request(app).post('/api/v1/properties').set('Authorization',`Bearer ${token}`).send(sample)).status).toBe(400);});it('registers and logs in',async()=>{await register('alice@example.com');const r=await request(app).post('/api/v1/auth/login').send(account('alice@example.com'));expect(r.status).toBe(200);expect(r.body.data.tokenType).toBe('Bearer');});it('rejects weak passwords, duplicate emails, and self-assigned admin roles',async()=>{expect((await request(app).post('/api/v1/auth/register').send({email:'weak@example.com',password:'bad'})).status).toBe(400);expect((await request(app).post('/api/v1/auth/register').send({...account('selfadmin@example.com'),role:'admin'})).status).toBe(400);await register('duplicate@example.com');expect((await request(app).post('/api/v1/auth/register').send(account('duplicate@example.com'))).status).toBe(409);});it('blocks another user from modifying a listing',async()=>{const owner=await bootstrap('owner@example.com');const intruder=await register('intruder@example.com');const other=await request(app).post('/api/v1/agencies').set('Authorization',`Bearer ${intruder}`).send({name:'Other Agency'});expect(other.status).toBe(201);const created=await request(app).post('/api/v1/properties').set('Authorization',`Bearer ${owner}`).set('X-Agency-ID',await agencyId(owner)).send(sample);expect(created.status).toBe(201);expect((await request(app).patch(`/api/v1/properties/${created.body.data.id}`).set('Authorization',`Bearer ${intruder}`).set('X-Agency-ID',other.body.data.id).send(sample)).status).toBe(404);expect((await request(app).delete(`/api/v1/properties/${created.body.data.id}`).set('Authorization',`Bearer ${intruder}`).set('X-Agency-ID',other.body.data.id)).status).toBe(404);});it('allows the owner to update and delete',async()=>{const token=await bootstrap('owner2@example.com');const created=await request(app).post('/api/v1/properties').set('Authorization',`Bearer ${token}`).set('X-Agency-ID',await agencyId(token)).send(sample);expect((await request(app).patch(`/api/v1/properties/${created.body.data.id}`).set('Authorization',`Bearer ${token}`).set('X-Agency-ID',await agencyId(token)).send({...sample,title:'Updated coastal home'})).status).toBe(200);expect((await request(app).delete(`/api/v1/properties/${created.body.data.id}`).set('Authorization',`Bearer ${token}`).set('X-Agency-ID',await agencyId(token))).status).toBe(204);});it('rejects invalid bearer tokens',async()=>{expect((await request(app).post('/api/v1/properties').set('Authorization','Bearer nonsense.token.value').send(sample)).status).toBe(401);});});
+describe('subscription payment lifecycle',()=>{
+ it('activates only after a matching callback and handles duplicate or mismatched callbacks safely',async()=>{
+  if(!pool)return;
+  const planId=randomUUID();
+  await pool.query("INSERT INTO subscription_plans(id,code,name,price_minor,billing_interval,is_active) VALUES($1,'test-monthly','Test Monthly',250000,'month',true)",[planId]);
+  const owner=await register('billing-payment-owner@example.com');
+  const createdAgency=await request(app).post('/api/v1/agencies').set('Authorization','Bearer '+owner).send({name:'Billing Payment Agency'});
+  expect(createdAgency.status).toBe(201);
+  const agency=createdAgency.body.data.id as string;
+  const payments=new SubscriptionPaymentRepository();
+  const plan=await payments.getActivePlan('test-monthly');expect(plan).not.toBeNull();
+  const concurrentRetries=await Promise.all([
+   payments.createAttempt(agency,plan!,'254712345678','billing-idempotency-key-0001'),
+   payments.createAttempt(agency,plan!,'254712345678','billing-idempotency-key-0001')
+  ]);
+  expect(concurrentRetries.filter(result=>result.created)).toHaveLength(1);
+  expect(concurrentRetries[0]!.payment.id).toBe(concurrentRetries[1]!.payment.id);
+  const attempt=concurrentRetries.find(result=>result.created)??concurrentRetries[0]!;
+  expect(attempt.created).toBe(true);
+  await expect(payments.createAttempt(agency,plan!,'254700000000','billing-idempotency-key-0001')).rejects.toThrow('IDEMPOTENCY_KEY_REUSED');
+  await expect(payments.createAttempt(agency,plan!,'254712345678','billing-idempotency-key-0002')).rejects.toThrow('PAYMENT_ALREADY_PENDING');
+  const checkout='checkout-'+randomUUID();
+  const pending=await payments.attachCheckout(attempt.payment.id,'merchant-'+randomUUID(),checkout);
+  expect(pending.status).toBe('pending');
+  const callback={checkoutRequestId:checkout,resultCode:0,resultDescription:'Success',amount:2500,receipt:'R'+randomUUID().replaceAll('-','').slice(0,10),payload:{Body:{stkCallback:{ResultCode:0}}}};
+  const completed=await payments.processCallback(callback);expect(completed.status).toBe('succeeded');
+  const subscription=await pool.query<{status:string;current_period_end:Date}>('SELECT status,current_period_end FROM agency_subscriptions WHERE agency_id=$1',[agency]);
+  expect(subscription.rows).toHaveLength(1);expect(subscription.rows[0]?.status).toBe('active');
+  const periodEnd=subscription.rows[0]!.current_period_end.toISOString();
+  const duplicate=await payments.processCallback(callback);expect(duplicate.duplicate).toBe(true);
+  const afterDuplicate=await pool.query<{current_period_end:Date}>('SELECT current_period_end FROM agency_subscriptions WHERE agency_id=$1',[agency]);
+  expect(afterDuplicate.rows[0]!.current_period_end.toISOString()).toBe(periodEnd);
+  const cancel=await request(app).post('/api/v1/billing/subscription/cancel').set('Authorization','Bearer '+owner).set('X-Agency-ID',agency);
+  expect(cancel.status).toBe(200);
+  const cancellationAudit=await pool.query<{action:string;entity_id:string}>("SELECT action,entity_id FROM audit_events WHERE agency_id=$1 AND action='agency.subscription.cancellation_scheduled'",[agency]);
+  expect(cancellationAudit.rows).toHaveLength(1);
+  expect(cancellationAudit.rows[0]?.action).toBe('agency.subscription.cancellation_scheduled');
+  const current=await request(app).get('/api/v1/billing/subscription').set('Authorization','Bearer '+owner).set('X-Agency-ID',agency);
+  expect(current.body.data.subscription.cancelAtPeriodEnd).toBe(true);
+  const otherOwner=await register('billing-payment-owner2@example.com');
+  const otherActor=(await pool.query<{id:string}>('SELECT id FROM users WHERE email=$1',['billing-payment-owner2@example.com'])).rows[0]!.id;
+  const otherAgency=await request(app).post('/api/v1/agencies').set('Authorization','Bearer '+otherOwner).send({name:'Second Billing Agency'});
+  const otherAttempt=await payments.createAttempt(otherAgency.body.data.id,plan!,'254712345678','billing-idempotency-key-0003');
+  const otherCheckout='checkout-'+randomUUID();
+  await payments.attachCheckout(otherAttempt.payment.id,'merchant-'+randomUUID(),otherCheckout);
+  const rejected=await payments.processCallback({checkoutRequestId:otherCheckout,resultCode:0,resultDescription:'Success',amount:2499,receipt:'R'+randomUUID().replaceAll('-','').slice(0,10),payload:{Body:{stkCallback:{ResultCode:0}}}});
+  expect(rejected.status).toBe('pending');
+  const noSubscription=await pool.query('SELECT id FROM agency_subscriptions WHERE agency_id=$1',[otherAgency.body.data.id]);
+  expect(noSubscription.rows).toHaveLength(0);
+  const mismatchReconciled=await payments.processQuery({agencyId:otherAgency.body.data.id,paymentId:otherAttempt.payment.id,actorUserId:otherActor,resultCode:0,resultDescription:'Confirmed by Daraja status query',payload:{ResultCode:0}});
+  expect(mismatchReconciled.status).toBe('succeeded');
+  const reconciliationAudit=await pool.query<{actor_user_id:string;entity_id:string;metadata:{status:string;resultCode:number|null}}>(
+   "SELECT actor_user_id,entity_id,metadata FROM audit_events WHERE agency_id=$1 AND action='agency.subscription.payment_reconciliation_checked'",
+   [otherAgency.body.data.id]
+  );
+  expect(reconciliationAudit.rows).toEqual([{
+   actor_user_id:otherActor,entity_id:otherAttempt.payment.id,metadata:{status:'succeeded',resultCode:0}
+  }]);
+  const failedDuplicate=await payments.processCallback({checkoutRequestId:otherCheckout,resultCode:1,resultDescription:'Failed duplicate callback',amount:2500,receipt:'R'+randomUUID().replaceAll('-','').slice(0,10),payload:{Body:{stkCallback:{ResultCode:1}}}});
+  expect(failedDuplicate.duplicate).toBe(true);
+  const recoveredPayment=await pool.query<{mpesa_receipt_number:string|null}>('SELECT mpesa_receipt_number FROM subscription_payments WHERE id=$1',[otherAttempt.payment.id]);
+  expect(recoveredPayment.rows[0]?.mpesa_receipt_number).toBeNull();
+  const recoveredSubscription=await pool.query('SELECT id FROM agency_subscriptions WHERE agency_id=$1',[otherAgency.body.data.id]);
+  expect(recoveredSubscription.rows).toHaveLength(1);
+  const thirdOwner=await register('billing-query-owner@example.com');
+  const thirdActor=(await pool.query<{id:string}>('SELECT id FROM users WHERE email=$1',['billing-query-owner@example.com'])).rows[0]!.id;
+  const thirdAgency=await request(app).post('/api/v1/agencies').set('Authorization','Bearer '+thirdOwner).send({name:'Query Reconciliation Agency'});
+  const thirdAttempt=await payments.createAttempt(thirdAgency.body.data.id,plan!,'254712345678','billing-idempotency-key-0004');
+  const thirdCheckout='checkout-'+randomUUID();
+  await payments.attachCheckout(thirdAttempt.payment.id,'merchant-'+randomUUID(),thirdCheckout);
+  const stillPending=await payments.processQuery({agencyId:thirdAgency.body.data.id,paymentId:thirdAttempt.payment.id,actorUserId:thirdActor,resultCode:null,resultDescription:'Still processing',payload:{ResultCode:null}});
+  expect(stillPending.status).toBe('pending');
+  const reconciled=await payments.processQuery({agencyId:thirdAgency.body.data.id,paymentId:thirdAttempt.payment.id,actorUserId:thirdActor,resultCode:0,resultDescription:'Confirmed by status query',payload:{ResultCode:0}});
+  expect(reconciled.status).toBe('succeeded');
+  const reconciliationHistory=await pool.query<{metadata:{status:string}}>(
+   "SELECT metadata FROM audit_events WHERE agency_id=$1 AND action='agency.subscription.payment_reconciliation_checked' ORDER BY created_at ASC",
+   [thirdAgency.body.data.id]
+  );
+  expect(reconciliationHistory.rows.map(row=>row.metadata.status)).toEqual(['pending','succeeded']);
+  const queryDuplicate=await payments.processQuery({agencyId:thirdAgency.body.data.id,paymentId:thirdAttempt.payment.id,resultCode:0,resultDescription:'Confirmed again',payload:{ResultCode:0}});
+  expect(queryDuplicate.duplicate).toBe(true);
+  const querySubscription=await pool.query('SELECT id FROM agency_subscriptions WHERE agency_id=$1',[thirdAgency.body.data.id]);
+  expect(querySubscription.rows).toHaveLength(1);
+  const lateReceipt='R'+randomUUID().replaceAll('-','').slice(0,10);
+  const lateCallback=await payments.processCallback({checkoutRequestId:thirdCheckout,resultCode:0,resultDescription:'Late callback',amount:2500,receipt:lateReceipt,payload:{Body:{stkCallback:{ResultCode:0}}}});
+  expect(lateCallback.duplicate).toBe(true);
+  const storedReceipt=await pool.query<{mpesa_receipt_number:string}>('SELECT mpesa_receipt_number FROM subscription_payments WHERE id=$1',[thirdAttempt.payment.id]);
+  expect(storedReceipt.rows[0]?.mpesa_receipt_number).toBe(lateReceipt);
+ });
+});
+describe('subscription billing foundation',()=>{
+ it('does not expose the Daraja callback route when no callback secret is configured',async()=>{expect((await request(app).post('/api/v1/webhooks/mpesa/not-a-real-secret').send({})).status).toBe(404);});
+ it('seeds the approved KES monthly plans as inactive until payment acceptance',async()=>{
+  if(!pool)return;
+  await migrate();
+  const plans=await pool.query<{code:string;price_minor:string;billing_interval:string;is_active:boolean}>("SELECT code,price_minor,billing_interval,max_listings,max_members,is_active FROM subscription_plans WHERE code IN ('starter','professional','business') ORDER BY price_minor");
+  expect(plans.rows).toEqual([
+   {code:'starter',price_minor:'250000',billing_interval:'month',max_listings:25,max_members:3,is_active:false},
+   {code:'professional',price_minor:'500000',billing_interval:'month',max_listings:100,max_members:10,is_active:false},
+   {code:'business',price_minor:'1200000',billing_interval:'month',max_listings:500,max_members:30,is_active:false}
+  ]);
+ });
+
+ it('enforces Starter listing and team-seat limits for an active agency subscription',async()=>{
+  if(!pool)return;
+  const owner=await bootstrap('starter-quota-owner@example.com');
+  const agency=await agencyId(owner,false);
+  const planId=randomUUID();
+  await pool.query("INSERT INTO subscription_plans(id,code,name,price_minor,billing_interval,max_listings,max_members,is_active) VALUES($1,$2,'Test Starter',250000,'month',25,3,false)",[planId,'test-starter-'+agency.slice(0,8)]);
+  await pool.query("INSERT INTO agency_subscriptions(id,agency_id,plan_id,status,provider,current_period_start,current_period_end) VALUES($1,$2,$3,'active','manual',now(),now()+interval '30 days')",[randomUUID(),agency,planId]);
+  for(let i=0;i<25;i++){
+   const created=await request(app).post('/api/v1/properties').set('Authorization','Bearer '+owner).set('X-Agency-ID',agency).send({...sample,title:'Starter listing '+i});
+   expect(created.status).toBe(201);
+  }
+  const overLimit=await request(app).post('/api/v1/properties').set('Authorization','Bearer '+owner).set('X-Agency-ID',agency).send({...sample,title:'Starter listing over limit'});
+  expect(overLimit.status).toBe(409);
+  const first=await request(app).post('/api/v1/agencies/invitations').set('Authorization','Bearer '+owner).set('X-Agency-ID',agency).send({email:'starter-seat-2@example.com',role:'agent'});
+  const second=await request(app).post('/api/v1/agencies/invitations').set('Authorization','Bearer '+owner).set('X-Agency-ID',agency).send({email:'starter-seat-3@example.com',role:'viewer'});
+  const third=await request(app).post('/api/v1/agencies/invitations').set('Authorization','Bearer '+owner).set('X-Agency-ID',agency).send({email:'starter-seat-4@example.com',role:'agent'});
+  expect(first.status).toBe(201);
+  expect(second.status).toBe(201);
+  expect(third.status).toBe(409);
+  expect(third.body.error.code).toBe('TEAM_LIMIT_REACHED');
+ });
+ it('exposes active plans and the selected agency subscription summary',async()=>{
+  if(!pool)return;
+  const plans=await request(app).get('/api/v1/billing/plans');
+  expect(plans.status).toBe(200);
+  expect(plans.body.data.items).toEqual([]);
+  const owner=await bootstrap('billing-owner@example.com');
+  const agency=await agencyId(owner,false);
+  const current=await request(app).get('/api/v1/billing/subscription').set('Authorization','Bearer '+owner).set('X-Agency-ID',agency);
+  expect(current.status).toBe(200);
+  expect(current.body.data.subscription).toBeNull();
+  expect(current.body.data.payments).toEqual([]);
+  const blockedListing=await request(app).post('/api/v1/properties').set('Authorization','Bearer '+owner).set('X-Agency-ID',agency).send(sample);
+  expect(blockedListing.status).toBe(402);
+  expect(blockedListing.body.error.code).toBe('SUBSCRIPTION_REQUIRED');
+  const blockedInvitation=await request(app).post('/api/v1/agencies/invitations').set('Authorization','Bearer '+owner).set('X-Agency-ID',agency).send({email:'no-subscription-invite@example.com',role:'agent'});
+  expect(blockedInvitation.status).toBe(402);
+  expect(blockedInvitation.body.error.code).toBe('SUBSCRIPTION_REQUIRED');
+  const checkout=await request(app).post('/api/v1/billing/mpesa/stk-push').set('Authorization','Bearer '+owner).set('X-Agency-ID',agency).set('Idempotency-Key','test-idempotency-key-0001').send({planCode:'starter',phoneNumber:'0712345678'});
+  expect(checkout.status).toBe(503);
+ });
+});
 describe('agency private inventory',()=>{
  it('returns drafts and published listings only to active members of the selected agency',async()=>{
   if(!pool)return;
@@ -77,7 +224,7 @@ describe('agency-scoped enquiries',()=>{
   expect(otherInbox.body.data.items).toHaveLength(0);
  });
 });
-describe('multi-agency schema foundation',()=>{it('creates agency tenancy, invitation and audit tables idempotently',async()=>{if(!pool)return;await migrate();const r=await pool.query<{name:string,exists:boolean}>(`SELECT name, to_regclass('public.'||name) IS NOT NULL AS exists FROM unnest(ARRAY['agencies','agency_memberships','agency_invitations','audit_events']) AS name`);expect(r.rows).toHaveLength(4);expect(r.rows.every(row=>row.exists)).toBe(true);const columns=await pool.query<{table_name:string,column_name:string}>(`SELECT table_name,column_name FROM information_schema.columns WHERE table_schema='public' AND (table_name,column_name) IN (('properties','agency_id'),('inquiries','agency_id'))`);expect(columns.rows).toHaveLength(2);await migrate();});});
+describe('multi-agency schema foundation',()=>{it('creates agency tenancy, invitation and audit tables idempotently',async()=>{if(!pool)return;await migrate();const r=await pool.query<{name:string,exists:boolean}>(`SELECT name, to_regclass('public.'||name) IS NOT NULL AS exists FROM unnest(ARRAY['agencies','agency_memberships','agency_invitations','audit_events','subscription_plans','agency_subscriptions','subscription_payments']) AS name`);expect(r.rows).toHaveLength(7);expect(r.rows.every(row=>row.exists)).toBe(true);const version=await pool.query<{current:boolean}>('SELECT EXISTS (SELECT 1 FROM schema_migrations WHERE version=4) AS current');expect(version.rows[0]?.current).toBe(true);const columns=await pool.query<{table_name:string,column_name:string}>(`SELECT table_name,column_name FROM information_schema.columns WHERE table_schema='public' AND (table_name,column_name) IN (('properties','agency_id'),('inquiries','agency_id'))`);expect(columns.rows).toHaveLength(2);await migrate();});});
 
 describe('agency onboarding',()=>{
  it('requires authentication to create or list agencies',async()=>{

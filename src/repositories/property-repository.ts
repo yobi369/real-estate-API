@@ -57,6 +57,15 @@ export class PropertyRepository{
    const client=await pool.connect();
    try{
     await client.query('BEGIN');
+    if(agencyId){
+     await client.query('SELECT id FROM agencies WHERE id=$1 FOR UPDATE',[agencyId]);
+     const plan=await client.query<{max_listings:number|null}>(`SELECT p.max_listings FROM agency_subscriptions s JOIN subscription_plans p ON p.id=s.plan_id WHERE s.agency_id=$1 AND s.status IN ('active','trialing') AND s.current_period_end>now() ORDER BY s.created_at DESC LIMIT 1`,[agencyId]);
+     if(!plan.rows[0])throw new Error('SUBSCRIPTION_REQUIRED');
+     if(plan.rows[0].max_listings!==null){
+      const count=await client.query<{count:string}>(`SELECT count(*)::text AS count FROM properties WHERE agency_id=$1 AND publication_status<>'archived'`,[agencyId]);
+      if(Number(count.rows[0]?.count??0)>=plan.rows[0].max_listings)throw new Error('LISTING_LIMIT_REACHED');
+     }
+    }
     const result=await client.query(`INSERT INTO properties(id,owner_id,agency_id,publication_status,title,slug,description,category,price,price_type,currency,property_type,transaction_type,bedrooms,bathrooms,city,location,address,country,area_sqm,size_acres,title_status,land_use,max_guests,featured,image_urls) VALUES($1,$2,$3,'draft',$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25) RETURNING *`,[randomUUID(),ownerId,agencyId??null,normalized.title,normalized.slug,normalized.description,normalized.category,normalized.price,normalized.priceType,normalized.currency,normalized.propertyType,normalized.transactionType,normalized.bedrooms,normalized.bathrooms,normalized.city,normalized.location,normalized.address,normalized.country,normalized.areaSqm,normalized.sizeAcres,normalized.titleStatus??null,normalized.landUse??null,normalized.maxGuests,normalized.featured,JSON.stringify(normalized.imageUrls)]);
     const property=result.rows[0]!;
     await client.query('INSERT INTO audit_events(id,agency_id,actor_user_id,action,entity_type,entity_id,metadata) VALUES($1,$2,$3,\'property.created\',\'property\',$4,$5::jsonb)',[randomUUID(),agencyId??null,ownerId,property.id,JSON.stringify({category:normalized.category,propertyType:normalized.propertyType,transactionType:normalized.transactionType})]);

@@ -162,6 +162,73 @@ export async function migrate(targetPool: pg.Pool | null = migrationPool): Promi
         created_at timestamptz NOT NULL DEFAULT now()
       );
       CREATE INDEX IF NOT EXISTS audit_events_agency_created_idx ON audit_events (agency_id,created_at DESC);
+      CREATE TABLE IF NOT EXISTS subscription_plans (
+        id uuid PRIMARY KEY,
+        code varchar(60) NOT NULL UNIQUE,
+        name varchar(100) NOT NULL,
+        description varchar(500) NOT NULL DEFAULT '',
+        currency varchar(3) NOT NULL DEFAULT 'KES' CHECK (currency='KES'),
+        price_minor bigint NOT NULL CHECK (price_minor > 0),
+        billing_interval text NOT NULL CHECK (billing_interval IN ('month','year')),
+        max_listings integer CHECK (max_listings IS NULL OR max_listings >= 0),
+        max_members integer CHECK (max_members IS NULL OR max_members >= 0),
+        monthly_api_requests bigint CHECK (monthly_api_requests IS NULL OR monthly_api_requests >= 0),
+        features jsonb NOT NULL DEFAULT '[]'::jsonb,
+        is_active boolean NOT NULL DEFAULT false,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        updated_at timestamptz NOT NULL DEFAULT now()
+      );
+      CREATE INDEX IF NOT EXISTS subscription_plans_active_price_idx ON subscription_plans (is_active,price_minor);
+      INSERT INTO subscription_plans
+        (id,code,name,description,currency,price_minor,billing_interval,max_listings,max_members,monthly_api_requests,features,is_active)
+      VALUES
+        ('00000000-0000-4000-8000-000000000251','starter','Starter','For small agencies starting their digital property operations.','KES',250000,'month',25,3,NULL,'["agency_console","property_inventory","enquiries"]'::jsonb,false),
+        ('00000000-0000-4000-8000-000000000252','professional','Professional','For growing agencies managing larger property portfolios.','KES',500000,'month',100,10,NULL,'["agency_console","property_inventory","enquiries","team_management","reports"]'::jsonb,false),
+        ('00000000-0000-4000-8000-000000000253','business','Business','For established agencies and multi-team operations.','KES',1200000,'month',500,30,NULL,'["agency_console","property_inventory","enquiries","team_management","reports","priority_support"]'::jsonb,false)
+      ON CONFLICT (code) DO UPDATE SET max_listings=EXCLUDED.max_listings,max_members=EXCLUDED.max_members,updated_at=now();
+      CREATE TABLE IF NOT EXISTS agency_subscriptions (
+        id uuid PRIMARY KEY,
+        agency_id uuid NOT NULL REFERENCES agencies(id) ON DELETE RESTRICT,
+        plan_id uuid NOT NULL REFERENCES subscription_plans(id) ON DELETE RESTRICT,
+        status text NOT NULL CHECK (status IN ('pending','trialing','active','past_due','cancelled','expired')),
+        provider text NOT NULL DEFAULT 'mpesa' CHECK (provider IN ('mpesa','manual')),
+        provider_reference text,
+        current_period_start timestamptz,
+        current_period_end timestamptz,
+        cancel_at_period_end boolean NOT NULL DEFAULT false,
+        cancelled_at timestamptz,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        updated_at timestamptz NOT NULL DEFAULT now(),
+        CHECK (current_period_end IS NULL OR current_period_start IS NULL OR current_period_end > current_period_start)
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS agency_subscriptions_one_current_idx
+        ON agency_subscriptions (agency_id) WHERE status IN ('pending','trialing','active','past_due');
+      CREATE INDEX IF NOT EXISTS agency_subscriptions_agency_history_idx ON agency_subscriptions (agency_id,created_at DESC);
+      CREATE TABLE IF NOT EXISTS subscription_payments (
+        id uuid PRIMARY KEY,
+        agency_id uuid NOT NULL REFERENCES agencies(id) ON DELETE RESTRICT,
+        subscription_id uuid REFERENCES agency_subscriptions(id) ON DELETE SET NULL,
+        plan_id uuid NOT NULL REFERENCES subscription_plans(id) ON DELETE RESTRICT,
+        provider text NOT NULL CHECK (provider IN ('mpesa','manual')),
+        idempotency_key varchar(128) NOT NULL,
+        checkout_request_id text UNIQUE,
+        merchant_request_id text,
+        phone_number varchar(20),
+        amount_minor bigint NOT NULL CHECK (amount_minor > 0),
+        currency varchar(3) NOT NULL DEFAULT 'KES' CHECK (currency='KES'),
+        status text NOT NULL CHECK (status IN ('initiated','pending','succeeded','failed','expired')),
+        result_code text,
+        result_description text,
+        mpesa_receipt_number text UNIQUE,
+        callback_payload jsonb,
+        paid_at timestamptz,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        updated_at timestamptz NOT NULL DEFAULT now(),
+        UNIQUE (agency_id,idempotency_key)
+      );
+      CREATE INDEX IF NOT EXISTS subscription_payments_agency_created_idx ON subscription_payments (agency_id,created_at DESC);
+      CREATE INDEX IF NOT EXISTS subscription_payments_status_created_idx ON subscription_payments (status,created_at DESC);
+      CREATE UNIQUE INDEX IF NOT EXISTS subscription_payments_one_pending_per_agency_idx ON subscription_payments (agency_id) WHERE status IN ('initiated','pending');
       ALTER TABLE properties ADD COLUMN IF NOT EXISTS publication_status text NOT NULL DEFAULT 'published' CHECK (publication_status IN ('draft','published','archived'));
       CREATE INDEX IF NOT EXISTS properties_publication_status_created_idx ON properties (publication_status,created_at DESC);
       ALTER TABLE properties ADD COLUMN IF NOT EXISTS agency_id uuid REFERENCES agencies(id) ON DELETE RESTRICT;
@@ -208,7 +275,7 @@ export async function migrate(targetPool: pg.Pool | null = migrationPool): Promi
       END
       $tenancy_backfill$;
 
-      INSERT INTO schema_migrations(version) VALUES (1),(2),(3) ON CONFLICT (version) DO NOTHING;
+      INSERT INTO schema_migrations(version) VALUES (1),(2),(3),(4) ON CONFLICT (version) DO NOTHING;
     `);
     await client.query('COMMIT');
   } catch (error) {

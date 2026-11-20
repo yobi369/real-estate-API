@@ -8,7 +8,11 @@ This checklist separates implemented controls from external or incomplete releas
 - [x] PostgreSQL repositories, constraints, indexes, and additive multi-agency schema initialization.
 - [x] Development/test in-memory adapter; readiness returns 503 without PostgreSQL.
 - [x] Scrypt password hashing, expiring HMAC-signed bearer tokens, and secret-protected first-admin bootstrap.
-- [x] Agency onboarding, active membership context resolution, agency-scoped listing writes, publication lifecycle, scoped enquiry inbox, and owner/admin membership administration with cross-agency isolation and owner protection.
+- [x] Agency onboarding, active membership context resolution, agency-scoped listing writes and private inventory reads, publication lifecycle, scoped enquiry inbox, and owner/admin membership administration with cross-agency isolation and owner protection.
+- [x] Authenticated agency console for inventory, enquiries, and team operations.
+- [x] Subscription-plan catalog, agency subscription state, and payment ledger schema with owner/admin-only billing summary APIs.
+- [x] Daraja STK Push adapter (PayBill), idempotency controls, callback-path secret, callback amount/receipt matching, status-query reconciliation, transactional subscription activation, and end-of-period cancellation. Sandbox credentials and an end-to-end provider test are still outstanding.
+- [ ] Verify callback delivery, missing-callback reconciliation, duplicate callbacks, user cancellation, timeouts, and amount mismatch against the Safaricom sandbox; confirm production PayBill onboarding and credentials.
 - [x] Public reads restricted to published listings; public responses omit owner and agency identifiers.
 - [x] Input validation, Helmet, configured CORS, request IDs, redacted sensitive headers, and bounded JSON body parsing.
 - [x] Process-local rate limits for bootstrap, registration, login, public search/demo, and enquiries; limits are not distributed.
@@ -24,7 +28,8 @@ This checklist separates implemented controls from external or incomplete releas
 - [ ] Verify TLS settings for service and database connections in the target host.
 - [ ] Store a unique JWT secret and deployment credentials in a managed secret store.
 - [ ] Configure automated provider backups/retention and complete an independent encrypted off-host backup plus a restore drill.
-- [ ] Define controlled migration execution, rollback, and deployment ownership. Move DDL/backfill out of application startup before enforcing a least-privilege runtime role.
+- [x] Move schema DDL/backfill out of application startup and provide a separate, explicit migration command using `MIGRATION_DATABASE_URL`.
+- [ ] Define migration rollback and deployment ownership; configure the Render runtime service to use the least-privilege `DATABASE_URL` role.
 - [ ] Configure CORS to the customer's approved origins and verify proxy trust settings.
 - [ ] Confirm the production service plan, availability characteristics, health checks, monitoring, and capacity are suitable for the agreed customer SLA.
 
@@ -44,6 +49,15 @@ This checklist separates implemented controls from external or incomplete releas
 - [ ] Add central monitoring, alerting, database-capacity monitoring, and an incident response owner.
 - [ ] Test deployment rollback and database restore procedures.
 - [ ] Verify live health/readiness, OpenAPI, and critical API flows after deployment.
+
+### Commercial billing and API monetization
+- [x] Confirmed initial monthly KES prices: Starter KSh 2,500; Professional KSh 5,000; Business KSh 12,000. Plans are seeded inactive.
+- [x] Approve and seed Starter (25 listings/3 seats), Professional (100 listings/10 seats), and Business (500 listings/30 seats) quotas; plans remain inactive pending payment acceptance.
+- [x] Enforce listing/team-seat quotas for agencies with a current paid/trial subscription; drafts and published listings count, archived listings do not, and active members plus pending invitations consume seats.
+- [x] Require a current paid/trial subscription for new listings and team invitations; existing inventory remains readable. [ ] Define expiry/grace-period behavior and access restoration before public commercial launch.
+- [ ] Define trial policy, grace period, refund/cancellation terms, and API request quotas; paid API access remains a separate product.
+- [ ] Verify Daraja sandbox and production acceptance gates in [M-Pesa integration](MPESA-INTEGRATION.md); configure credentials only in the managed secret store.
+- [ ] Build API-key issuance/revocation, developer accounts, usage metering, per-plan quotas, and paid API access as the second commercial product.
 
 ### Customer and data governance
 - [ ] Agree data controller/processor responsibilities and applicable Kenyan data-protection obligations with the customer.

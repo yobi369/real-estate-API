@@ -47,6 +47,17 @@ npm run verify
 
 See [the integration pilot proposal](docs/COMMERCIAL-PILOT-PROPOSAL.md) for the indicative scope, pricing and commercial boundaries.
 
+## Agency billing foundation
+
+- `GET /api/v1/billing/plans` returns active subscription plans.
+- `GET /api/v1/billing/subscription` returns the selected agency's current subscription and recent payment history (owner/admin only; requires `X-Agency-ID`).
+- `POST /api/v1/billing/mpesa/stk-push` starts an idempotent Daraja checkout for an active plan (owner/admin only; requires `X-Agency-ID` and `Idempotency-Key`).
+- Daraja callbacks are accepted at the configured unguessable callback path; the payment is matched to the pending checkout, KES amount and receipt before the subscription is activated.
+- `POST /api/v1/billing/payments/{paymentId}/reconcile` performs an owner/admin-triggered STK status query when a callback is delayed or missing; confirmed status is applied idempotently.
+- `POST /api/v1/billing/subscription/cancel` schedules cancellation at the end of the current paid period.
+- Configure all `MPESA_*` settings together in the secret store. Callback URLs must be public HTTPS origins. The current STK adapter is PayBill-only. Till/Buy Goods collection needs a separately verified Daraja API flow.
+- Starter (KSh 2,500/month: 25 active listings, 3 team seats), Professional (KSh 5,000/month: 100 active listings, 10 team seats), and Business (KSh 12,000/month: 500 active listings, 30 team seats) are seeded as inactive plans. The API requires a current paid/trial subscription to create new listings or invite team members, and enforces the selected plan's listing and seat limits. Existing inventory remains stored and readable; no automatic free tier is promised. Listing counts include drafts and published listings but exclude archived listings; team seats include active memberships and unexpired pending invitations. Subscription/grace-period policy for expiry and access restoration remains a go-live decision. API request quotas and paid API access are not included. No Daraja credentials are configured in this repository, so sandbox/production end-to-end payment verification is still outstanding.
+
 ## Production deployment
 
 See [the production-readiness checklist](docs/PRODUCTION-READINESS.md) before using customer or personal data. The public demo is not a production customer environment. The agency console is a product workflow foundation; billing, automated invitation email, and production customer onboarding remain separate release gates.
@@ -59,4 +70,5 @@ See [the production-readiness checklist](docs/PRODUCTION-READINESS.md) before us
 - [Testing](docs/TESTING.md)
 - [Deployment](docs/DEPLOYMENT.md)
 - [Quality evidence](docs/QUALITY-EVIDENCE.md)
+- [M-Pesa integration](docs/MPESA-INTEGRATION.md)
 - [Changelog](CHANGELOG.md)
