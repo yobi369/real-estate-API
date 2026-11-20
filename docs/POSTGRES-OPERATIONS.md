@@ -117,3 +117,18 @@ A disposable Neon child branch was created from the staging branch and used to r
 - Created a non-login runtime-role test principal on the disposable branch and verified schema USAGE plus SELECT/INSERT/UPDATE/DELETE on tables, while CREATE schema, TRUNCATE, TRIGGER, and REFERENCES remained denied. Default privileges for future tables and sequences were configured for the rehearsal role.
 
 This proves the current migration can be applied and replayed against a copy of the staging data. It does not prove the actual staging Render service is configured with the new runtime credential, that the staging service can start against the migrated schema, or that the production migration is approved. Keep the disposable branch until the evidence is reviewed; do not treat it as a backup or customer environment.
+
+## Shared staging migration — 2026-11-20
+
+After the disposable rehearsal passed, the same v5 migration was applied transactionally to the shared Neon staging branch (`staging`, `br-wispy-glade-aomxo2z8`). This was not a production operation.
+
+Verified after migration:
+- Schema markers: versions 1–5.
+- Existing data preserved: 1 user, 1 inquiry, 1 media asset.
+- Legacy backfill: 1 agency, 1 owner membership, and the existing inquiry assigned to that agency.
+- Subscription catalog: 3 plans seeded; all 3 remain inactive.
+- Distributed rate-limit table exists and contains no buckets.
+- A `secure_properties_runtime` group role was created as `NOLOGIN`, granted CONNECT, schema USAGE, table DML and sequence usage, and given default privileges for future tables/sequences.
+- Explicit privilege checks confirm no schema CREATE, table TRUNCATE, TRIGGER, or REFERENCES privilege.
+
+The NOLOGIN role is a privilege template, not an application credential. The Render staging service has not yet been switched to it; a separate managed login credential and staging environment configuration are still required. The staging service has not been redeployed as part of this database operation. Production remains at its prior schema version and has not been migrated.
