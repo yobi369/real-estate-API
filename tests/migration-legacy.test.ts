@@ -87,6 +87,8 @@ describe('legacy PostgreSQL tenancy migration', () => {
     );
 
     await migrate(isolatedPool);
+    // A repeated run must not create a second agency or duplicate memberships.
+    await migrate(isolatedPool);
 
     const agency = await isolatedPool.query<{ id: string; name: string }>(
       "SELECT id,name FROM agencies WHERE slug='legacy-default'"
