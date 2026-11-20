@@ -15,7 +15,7 @@ This checklist separates implemented controls from external or incomplete releas
 - [ ] Verify callback delivery, missing-callback reconciliation, duplicate callbacks, user cancellation, timeouts, and amount mismatch against the Safaricom sandbox; confirm production PayBill onboarding and credentials.
 - [x] Public reads restricted to published listings; public responses omit owner and agency identifiers.
 - [x] Input validation, Helmet, configured CORS, request IDs, redacted sensitive headers, and bounded JSON body parsing.
-- [x] Process-local rate limits for bootstrap, registration, login, public search/demo, and enquiries; limits are not distributed.
+- [x] Shared PostgreSQL fixed-window rate-limiting implementation is available in stacked security PR #11: separate namespaces cover bootstrap, registration, login, M-Pesa checkout, public search, and enquiries; client IPs are keyed HMAC digests and production fails closed if the shared store is unavailable. Staging verification and threshold tuning remain outstanding.
 - [x] Security regression tests for headers, auth throttling, oversized JSON payload handling, enquiry routing, invitation lifecycle, agency membership authorization/auditing, and two-step ownership transfer. CI evidence is recorded in the latest workflow run.
 - [x] Dependency-free HTTP benchmark runner and documented evidence procedure; no production capacity claim has been established.
 - [x] CI workflow audits production dependencies and runs typecheck, tests, build, and lint on Node 22/24 with PostgreSQL 16.
@@ -34,7 +34,7 @@ This checklist separates implemented controls from external or incomplete releas
 - [ ] Confirm the production service plan, availability characteristics, health checks, monitoring, and capacity are suitable for the agreed customer SLA.
 
 ### Identity and application security
-- [ ] Replace process-local rate limits with shared/distributed enforcement or an edge/WAF equivalent before scaling horizontally.
+- [ ] Verify the shared PostgreSQL rate limiter in staging, tune thresholds, monitor database load, and retain edge/WAF protection for volumetric attacks; review proxy trust configuration for the actual hosting topology.
 - [ ] Implement email verification, secure password reset, token revocation/rotation, and account/session lifecycle controls.
 - [ ] Extend audit events to remaining privileged operations and complete the independent audit-coverage review; agency, listing, invitation, and membership mutations are covered.
 - [x] Implement invitation create/accept/revoke endpoints with hashed expiring tokens, email matching, and transactional audit events.
@@ -54,8 +54,9 @@ This checklist separates implemented controls from external or incomplete releas
 - [x] Confirmed initial monthly KES prices: Starter KSh 2,500; Professional KSh 5,000; Business KSh 12,000. Plans are seeded inactive.
 - [x] Approve and seed Starter (25 listings/3 seats), Professional (100 listings/10 seats), and Business (500 listings/30 seats) quotas; plans remain inactive pending payment acceptance.
 - [x] Enforce listing/team-seat quotas for agencies with a current paid/trial subscription; drafts and published listings count, archived listings do not, and active members plus pending invitations consume seats.
-- [x] Require a current paid/trial subscription for new listings and team invitations; existing inventory remains readable. [ ] Define expiry/grace-period behavior and access restoration before public commercial launch.
-- [ ] Define trial policy, grace period, refund/cancellation terms, and API request quotas; paid API access remains a separate product.
+- [x] Require a current paid/trial subscription for new listings and team invitations; existing inventory remains readable.
+- [ ] Approve and implement the proposed expiry policy: at paid-period end, immediately block new listings and invitations while preserving access to existing inventory and enquiries; provide a 7-calendar-day renewal/support grace window; after that window keep the workspace read-only with data export available; restore write access only after a verified payment. No data is automatically deleted for non-payment.
+- [ ] Define trial eligibility, refunds, cancellation handling, and customer communications; paid API access remains a separate product.
 - [ ] Verify Daraja sandbox and production acceptance gates in [M-Pesa integration](MPESA-INTEGRATION.md); configure credentials only in the managed secret store.
 - [ ] Build API-key issuance/revocation, developer accounts, usage metering, per-plan quotas, and paid API access as the second commercial product.
 
@@ -73,6 +74,16 @@ This checklist separates implemented controls from external or incomplete releas
 - [x] Demo search is read-only.
 - [ ] Verify deployed demo, Swagger UI, and OpenAPI endpoints after deployment.
 - [ ] Check screenshots/sample records for secrets and personal/customer information.
+
+## Proposed operational service objectives (approval required)
+
+For the first controlled customer pilot, use these as planning targets—not achieved guarantees—until the operator, customer, and hosting plan approve them:
+
+- Recovery point objective (RPO): no more than 24 hours of data loss.
+- Recovery time objective (RTO): restore critical service within 8 hours.
+- Encrypted independent logical backup: at least daily, with a proposed 30-day retention window and a separate off-host copy.
+- Run a restore drill at least quarterly and after material backup/restore changes; record actual achieved RPO/RTO and evidence.
+- If the selected hosting tier or backup workflow cannot meet these targets, revise the customer SLA before onboarding.
 
 ## Release decision
 
