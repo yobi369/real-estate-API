@@ -66,6 +66,10 @@ describe('subscription payment lifecycle',()=>{
   expect(noSubscription.rows).toHaveLength(0);
   const mismatchReconciled=await payments.processQuery({agencyId:otherAgency.body.data.id,paymentId:otherAttempt.payment.id,resultCode:0,resultDescription:'Confirmed by Daraja status query',payload:{ResultCode:0}});
   expect(mismatchReconciled.status).toBe('succeeded');
+  const failedDuplicate=await payments.processCallback({checkoutRequestId:otherCheckout,resultCode:1,resultDescription:'Failed duplicate callback',amount:2500,receipt:'R'+randomUUID().replaceAll('-','').slice(0,10),payload:{Body:{stkCallback:{ResultCode:1}}}});
+  expect(failedDuplicate.duplicate).toBe(true);
+  const recoveredPayment=await pool.query<{mpesa_receipt_number:string|null}>('SELECT mpesa_receipt_number FROM subscription_payments WHERE id=$1',[otherAttempt.payment.id]);
+  expect(recoveredPayment.rows[0]?.mpesa_receipt_number).toBeNull();
   const recoveredSubscription=await pool.query('SELECT id FROM agency_subscriptions WHERE agency_id=$1',[otherAgency.body.data.id]);
   expect(recoveredSubscription.rows).toHaveLength(1);
   const thirdOwner=await register('billing-query-owner@example.com');
