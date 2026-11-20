@@ -12,9 +12,16 @@ This runbook is for the Real Estate API's PostgreSQL database. It is intentional
 - Do not put database URLs, passwords, private age identities, or decrypted dumps in Git, logs, tickets, or chat.
 - The scripts below create encrypted database dumps and refuse to restore into a non-empty target. They do not provision storage, configure provider retention, or prove that off-host copies are recoverable.
 
-## Required backup policy decisions
+## Proposed pilot backup baseline (approval required)
 
-Before accepting customer data, the service owner must document:
+Use the following as initial planning targets for a controlled pilot; they are not achieved guarantees and must be confirmed against the selected Neon plan, backup destination, and customer agreement:
+- RPO target: at most 24 hours.
+- RTO target: at most 8 hours for critical service restoration.
+- At least one encrypted logical backup every 24 hours.
+- Proposed retention: 30 daily restore points, with an off-host encrypted copy.
+- Quarterly restore drill and after material backup/restore changes.
+
+Before accepting customer data, the service owner must document and approve:
 - Recovery point objective (maximum acceptable data loss).
 - Recovery time objective (maximum acceptable outage).
 - Backup frequency and retention period.
@@ -94,4 +101,4 @@ The current migration body remains one idempotent DDL/backfill transaction and r
 
 ## Release gate
 
-A backup is not considered verified until an encrypted copy exists off-host and a restore has completed into an isolated empty target with the application-level checks above. Record the date, operator, RPO/RTO achieved, and reviewer sign-off in the production-readiness evidence.
+A backup is not considered verified until an encrypted copy exists off-host and a restore has completed into an isolated empty target with the application-level checks above. Record the date, operator, backup age at recovery, restore duration, RPO/RTO achieved, and reviewer sign-off in the production-readiness evidence. The current Neon branch-copy drill is not an independent logical backup/restore drill.
