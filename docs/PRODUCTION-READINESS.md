@@ -47,7 +47,7 @@ This is a point-in-time, read-only audit. Database row counts were queried witho
 ### Identity and application security
 - [ ] Verify the shared PostgreSQL rate limiter in staging, tune thresholds, monitor database load, and retain edge/WAF protection for volumetric attacks; review proxy trust configuration for the actual hosting topology.
 - [ ] Implement email verification, secure password reset, token revocation/rotation, and account/session lifecycle controls.
-- [ ] Extend audit events to remaining privileged operations and complete the independent audit-coverage review; agency, listing, invitation, and membership mutations are covered.
+- [ ] Extend audit events to payment reconciliation and remaining privileged operations, then complete the independent audit-coverage review; agency, listing, invitation, ownership-transfer, membership, and subscription-cancellation mutations are covered.
 - [x] Implement invitation create/accept/revoke endpoints with hashed expiring tokens, email matching, and transactional audit events.
 - [x] Implement owner-initiated, recipient-accepted ownership transfer with hashed 48-hour tokens, same-agency active-admin eligibility, transactional role swap, and audit events.
 - [ ] Complete dependency, secret, and static-analysis review and resolve material findings.
