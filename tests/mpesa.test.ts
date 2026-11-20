@@ -14,6 +14,9 @@ describe('M-Pesa helpers',()=>{
    expect(parseStkCallback({Body:{stkCallback:{CheckoutRequestID:'ws_CO_123',ResultCode:resultCode}}})).toBeNull();
   }
  });
+ it('ignores malformed callback metadata entries without throwing',()=>{
+  expect(parseStkCallback({Body:{stkCallback:{CheckoutRequestID:'ws_CO_123',ResultCode:0,CallbackMetadata:{Item:[null,4,'invalid',{Name:'Amount',Value:2500}]}}}})?.amount).toBe(2500);
+ });
  it('accepts and sanitizes a structurally valid Daraja callback',()=>{
   const parsed=parseStkCallback({Body:{stkCallback:{CheckoutRequestID:' ws_CO_123 ',ResultCode:0,ResultDesc:'Success',CallbackMetadata:{Item:[{Name:'Amount',Value:2500},{Name:'MpesaReceiptNumber',Value:'ABC123XYZ'}]}}}});
   expect(parsed).toEqual({checkoutRequestId:'ws_CO_123',resultCode:0,resultDescription:'Success',amount:2500,receipt:'ABC123XYZ',payload:{checkoutRequestId:'ws_CO_123',resultCode:0,resultDescription:'Success',amount:2500,receipt:'ABC123XYZ'}});
