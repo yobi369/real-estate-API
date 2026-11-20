@@ -29,6 +29,13 @@ describe('API security controls', () => {
     expect(blocked.status).toBe(429);
     expect(blocked.body.error.code).toBe('RATE_LIMITED');
     expect(Number(blocked.headers['retry-after'])).toBeGreaterThan(0);
+    // Sustained blocked traffic must not grow the persisted counter without bound.
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      const repeated = await request(app).post('/api/v1/auth/login')
+        .set('X-Forwarded-For', ip)
+        .send({ email: 'unknown@example.com', password: 'WrongPassword123' });
+      expect(repeated.status).toBe(429);
+    }
     const persisted = await pool?.query<{ request_count: number }>(
       "SELECT request_count FROM api_rate_limit_buckets WHERE bucket_key=$1",
       [`auth-login:${ip}`]
