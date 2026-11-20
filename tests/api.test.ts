@@ -133,6 +133,12 @@ describe('subscription billing foundation',()=>{
   expect(current.status).toBe(200);
   expect(current.body.data.subscription).toBeNull();
   expect(current.body.data.payments).toEqual([]);
+  const blockedListing=await request(app).post('/api/v1/properties').set('Authorization','Bearer '+owner).set('X-Agency-ID',agency).send(sample);
+  expect(blockedListing.status).toBe(402);
+  expect(blockedListing.body.error.code).toBe('SUBSCRIPTION_REQUIRED');
+  const blockedInvitation=await request(app).post('/api/v1/agencies/invitations').set('Authorization','Bearer '+owner).set('X-Agency-ID',agency).send({email:'no-subscription-invite@example.com',role:'agent'});
+  expect(blockedInvitation.status).toBe(402);
+  expect(blockedInvitation.body.error.code).toBe('SUBSCRIPTION_REQUIRED');
   const checkout=await request(app).post('/api/v1/billing/mpesa/stk-push').set('Authorization','Bearer '+owner).set('X-Agency-ID',agency).set('Idempotency-Key','test-idempotency-key-0001').send({planCode:'starter',phoneNumber:'0712345678'});
   expect(checkout.status).toBe(503);
  });
