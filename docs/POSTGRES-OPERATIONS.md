@@ -56,6 +56,12 @@ The script:
 
 Copy both the `.dump.age` and `.dump.age.sha256` files to a separate, encrypted, access-controlled storage location. Verify the copied checksum. A local copy on the same host or volume is not an off-host backup.
 
+## Automated backup/restore verification
+
+CI runs an end-to-end test against a disposable PostgreSQL 16 database. It generates an ephemeral age identity, writes a probe row, creates an encrypted logical backup, restores it into a newly created empty database, verifies the restored row, and confirms that a second restore is refused once the target is populated.
+
+This validates the repository scripts and encryption/decryption flow in CI. It is not evidence of an off-host backup copy, scheduled retention, a production restore, or an achieved RPO/RTO.
+
 ## Restore drill
 
 Create a disposable empty PostgreSQL 16 database or isolated Neon branch dedicated to restore testing. Never point this procedure at the production database.
