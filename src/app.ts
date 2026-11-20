@@ -318,7 +318,7 @@ app.post('/api/v1/billing/payments/:paymentId/reconcile',billingCheckoutRateLimi
 app.post('/api/v1/billing/subscription/cancel',authenticate,async(req,res)=>{
  const agency=await resolveActiveAgency(req,res);if(!agency)return;
  if(!['owner','admin'].includes(agency.role))return res.status(403).json({error:{code:'FORBIDDEN',message:'Agency owner or admin permission is required to manage billing'}});
- const scheduled=await subscriptionRepository.scheduleCancellation(agency.id);
+ const scheduled=await subscriptionRepository.scheduleCancellation(agency.id,req.principal!.id);
  if(!scheduled)return res.status(409).json({error:{code:'NO_ACTIVE_SUBSCRIPTION',message:'There is no active subscription to cancel'}});
  return res.json({data:{cancelAtPeriodEnd:true}});
 });
