@@ -15,7 +15,7 @@ This checklist separates implemented controls from external or incomplete releas
 - [ ] Verify callback delivery, missing-callback reconciliation, duplicate callbacks, user cancellation, timeouts, and amount mismatch against the Safaricom sandbox; confirm production PayBill onboarding and credentials.
 - [x] Public reads restricted to published listings; public responses omit owner and agency identifiers.
 - [x] Input validation, Helmet, configured CORS, request IDs, redacted sensitive headers, and bounded JSON body parsing.
-- [x] Shared PostgreSQL fixed-window rate-limiting implementation is available in stacked security PR #11: separate namespaces cover bootstrap, registration, login, M-Pesa checkout, public search, and enquiries; client IPs are keyed HMAC digests and production fails closed if the shared store is unavailable. Staging verification and threshold tuning remain outstanding.
+- [x] Shared PostgreSQL fixed-window rate-limiting implementation is available in stacked security PR #11: separate namespaces cover bootstrap, registration, login, M-Pesa checkout, public search, and enquiries; client IPs are keyed HMAC digests and production fails closed if the shared store is unavailable. The security branch is deployed to a separate staging candidate; schema readiness and least-privilege rate-limit-table DML have been verified. Live HTTP abuse testing and threshold tuning remain outstanding.
 - [x] Security regression tests for headers, auth throttling, oversized JSON payload handling, enquiry routing, invitation lifecycle, agency membership authorization/auditing, and two-step ownership transfer. CI evidence is recorded in the latest workflow run.
 - [x] Dependency-free HTTP benchmark runner and documented evidence procedure; no production capacity claim has been established.
 - [x] CI workflow audits production dependencies and runs typecheck, tests, build, and lint on Node 22/24 with PostgreSQL 16.
@@ -28,10 +28,10 @@ This is a point-in-time, read-only audit. Database row counts were queried witho
 - Neon production remains at schema migration versions 1 and 2; it has not been migrated. Production row counts remain 0 users, 0 properties, 0 enquiries, and 0 media assets.
 - Neon staging was migrated transactionally to schema versions 1–5 on 2026-11-20 after the same migration passed twice on a disposable staging-data clone. Staging now has 1 user, 0 properties, 1 enquiry, 1 media asset, 1 legacy agency, 1 owner membership, 3 seeded subscription plans (all inactive), and the shared rate-limit table.
 - The staging migration preserved existing user, enquiry, and media row counts; the existing enquiry was assigned to the legacy agency. Customer record contents were not queried.
-- A `secure_properties_runtime` NOLOGIN role template is configured on staging with schema USAGE, ordinary table DML, sequence access, and default privileges. It has no schema CREATE, table TRUNCATE, TRIGGER, or REFERENCES privileges. The Render staging service has not been switched to a login credential for this role.
-- Render production service latest live deploy: 2026-11-16, commit `43a44ce6dbe5777af767c108563f08a0fae43d4a`; post-deploy request logs show `/health/live` and `/health/ready` returned HTTP 200. Render staging service latest live deploy: 2026-11-15, commit `10c745bb2cdf0d494b6e42d91c7170c9b7ca606c`; it has not deployed the current release branches.
-- Both Render services are on the free plan, have automatic deployment disabled, and have no Render health-check path configured. The observed production health responses confirm that the currently deployed older service is running, not that the new billing/security release is deployed or production-ready.
-- The shared staging database migration was performed; no Render environment-variable changes or service deployments were performed. Production was not migrated.
+- A `secure_properties_runtime` NOLOGIN role template and `secure_properties_staging_app` login are configured on staging. The candidate app connects through the restricted login; schema USAGE is true, schema CREATE is false, and rate-limit table SELECT/INSERT were verified using that login. The owner-level migration connection is separate in `MIGRATION_DATABASE_URL` and is configured only on the staging candidate service.
+- Render production service latest live deploy: 2026-11-16, commit `43a44ce6dbe5777af767c108563f08a0fae43d4a`; post-deploy request logs show `/health/live` and `/health/ready` returned HTTP 200. Legacy staging service was restored and is live on commit `10c745bb2cdf0d494b6e42d91c7170c9b7ca606c`. A separate staging candidate, `https://secure-properties-api-staging-v2.onrender.com`, is live on `security/distributed-rate-limiting` commit `fb01da6052e09a0451bd9097c9199bb4688db480` (deploy `dep-dc02i4dg1s2s73e09700`, 2026-11-20).
+- The production, legacy staging, and staging-candidate services are on the free plan with automatic deployment disabled; no Render health-check path is configured. Render reports the candidate deployment live and its startup completed without an application error. The candidate's database readiness predicate returned true directly against staging PostgreSQL, but an external HTTP request to `/health/ready` has not yet been independently confirmed.
+- The staging runtime and migration credentials were configured only on the new candidate service. The previous staging service's database URL was restored to its prior owner-level compatibility mode and that service returned to live status. Production environment variables, database, and deployments were not changed.
 
 ## Required before customer production launch
 
@@ -47,7 +47,7 @@ This is a point-in-time, read-only audit. Database row counts were queried witho
 - [ ] Confirm the production service plan, availability characteristics, health checks, monitoring, and capacity are suitable for the agreed customer SLA.
 
 ### Identity and application security
-- [ ] Deploy the security branch to staging, verify the PostgreSQL rate limiter against live staging traffic, tune thresholds, monitor database load, and retain edge/WAF protection for volumetric attacks. The observed Render X-Forwarded-For chain was three hops (loopback socket, Render proxy, Cloudflare); PR #11 now trusts exactly those hops and tests rotating forged prefixes, but the new code is not deployed.
+- [ ] Exercise the deployed security candidate against live staging HTTP traffic: verify rate-limit behavior across repeated requests and replicas, tune thresholds, monitor database load, and retain edge/WAF protection for volumetric attacks. The observed Render X-Forwarded-For chain was three hops (loopback socket, Render proxy, Cloudflare); PR #11 trusts exactly those hops and tests rotating forged prefixes. Database schema readiness and restricted-role DML are verified; HTTP abuse tests remain outstanding.
 - [ ] Implement email verification, secure password reset, token revocation/rotation, and account/session lifecycle controls.
 - [x] Record authenticated owner/admin payment status-query reconciliation in the agency audit log with actor attribution; agency, listing, invitation, ownership-transfer, membership, and subscription-cancellation mutations are also covered.
 - [ ] Complete an independent audit-coverage review for all privileged operations.
@@ -64,7 +64,7 @@ Owner/admin Daraja status-query reconciliation records the actor, payment ID, co
 - [ ] Record region, instance size, database tier, concurrency, request count, p50/p95/p99, error rate, and raw JSON output.
 - [ ] Add central monitoring, alerting, database-capacity monitoring, and an incident response owner.
 - [ ] Test deployment rollback and database restore procedures.
-- [ ] Verify live health/readiness, OpenAPI, and critical API flows after deployment.
+- [ ] Independently call `/health/live` and `/health/ready`, OpenAPI, and critical API flows on the staging candidate after deployment; Render's platform health-check path is still unset.
 
 ### Commercial billing and API monetization
 - [x] Confirmed initial monthly KES prices: Starter KSh 2,500; Professional KSh 5,000; Business KSh 12,000. Plans are seeded inactive.
