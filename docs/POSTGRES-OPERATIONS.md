@@ -132,3 +132,20 @@ Verified after migration:
 - Explicit privilege checks confirm no schema CREATE, table TRUNCATE, TRIGGER, or REFERENCES privilege.
 
 The NOLOGIN role is a privilege template, not an application credential. The Render staging service has not yet been switched to it; a separate managed login credential and staging environment configuration are still required. The staging service has not been redeployed as part of this database operation. Production remains at its prior schema version and has not been migrated.
+
+## Staging runtime split verification — 2026-11-20
+
+The v5 schema is applied to the shared staging branch `staging` (`br-wispy-glade-aomxo2z8`). A separate Render staging candidate was deployed from the security branch:
+
+- Service: `secure-properties-api-staging-v2` — `https://secure-properties-api-staging-v2.onrender.com`.
+- Branch/commit: `security/distributed-rate-limiting` / `fb01da6052e09a0451bd9097c9199bb4688db480`.
+- Render deploy: `dep-dc02i4dg1s2s73e09700`, status `live`.
+- `DATABASE_URL` uses the restricted `secure_properties_staging_app` login.
+- `MIGRATION_DATABASE_URL` uses the separate staging database-owner credential for the migration path; it is not the runtime pool credential.
+- The runtime login can use schema `public` and perform ordinary table DML, including inserting a temporary rate-limit bucket. It cannot CREATE in schema `public`. The temporary test row was deleted after verification.
+- The application readiness SQL predicate returned `ready=true`; schema migration markers 1–5 were present. Counts remained 1 user, 0 properties, 1 inquiry, 1 agency, 1 membership, and 3 inactive plans.
+- Temporary secret-generation database roles were revoked and dropped after their generated values were stored as staging environment variables.
+
+The earlier staging service was restored to its previous owner-level database URL so it would not remain broken while the new candidate is tested. It is a legacy compatibility service on the older `integration/secure-properties-platform` branch, not the release candidate. The candidate's Render deploy is live and startup logged no application configuration or database-permission error. The external HTTP health/readiness routes, authentication/bootstrap, tenant isolation, quota enforcement, M-Pesa sandbox callbacks, and live multi-request rate-limit behavior still require explicit staging tests.
+
+No production database migration, production secret update, production deployment, PR merge, or subscription-plan activation was performed. Do not copy the staging owner credential into the production runtime; production must use its own separately managed migration and least-privilege runtime credentials.
