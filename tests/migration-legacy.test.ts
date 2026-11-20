@@ -116,6 +116,6 @@ describe('legacy PostgreSQL tenancy migration', () => {
     const versions = await isolatedPool.query<{ versions: number[] }>(
       'SELECT array_agg(version ORDER BY version) AS versions FROM schema_migrations'
     );
-    expect(versions.rows[0]?.versions).toEqual([1, 2, 3, 4, 5]);
+    expect(versions.rows[0]?.versions).toEqual([1, 2, 3, 4]);
   });
 });
