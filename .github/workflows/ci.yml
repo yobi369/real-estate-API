@@ -42,8 +42,12 @@ jobs:
         run: npm audit --audit-level=low
       - name: Audit production dependencies
         run: npm audit --omit=dev --audit-level=high
+      - name: Install PostgreSQL and age backup tools
+        run: sudo apt-get update && sudo apt-get install -y age postgresql-client
       - name: Validate PostgreSQL operations scripts
-        run: bash -n scripts/backup-postgres.sh scripts/restore-postgres.sh scripts/test-restore-target-guard.sh
+        run: bash -n scripts/backup-postgres.sh scripts/restore-postgres.sh scripts/test-restore-target-guard.sh scripts/test-backup-restore.sh
       - name: Test restore target safety guard against PostgreSQL 16
         run: bash scripts/test-restore-target-guard.sh
+      - name: Test encrypted PostgreSQL backup and restore
+        run: bash scripts/test-backup-restore.sh
       - run: npm run verify
