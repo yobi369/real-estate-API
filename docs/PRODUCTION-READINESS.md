@@ -21,6 +21,17 @@ This checklist separates implemented controls from external or incomplete releas
 - [x] CI workflow audits production dependencies and runs typecheck, tests, build, and lint on Node 22/24 with PostgreSQL 16.
 - [x] Encrypted PostgreSQL logical-backup and guarded empty-target restore scripts are available in `scripts/backup-postgres.sh` and `scripts/restore-postgres.sh`; see [PostgreSQL operations](POSTGRES-OPERATIONS.md). Tooling availability is not evidence of a completed backup or restore drill.
 
+## Verified environment snapshot — 2026-11-20
+
+This is a point-in-time, read-only audit. Database row counts were queried without reading customer records.
+
+- Neon production and staging each report only schema migration versions 1 and 2. The agency, subscription, payment-ledger, and distributed rate-limit tables from the current release branches have not been applied to either environment.
+- Production row counts: 0 users, 0 properties, 0 enquiries, and 0 media assets.
+- Staging row counts: 1 user, 0 properties, 1 enquiry, and 1 media asset. The existing staging records were not inspected or modified.
+- Render production service last live deploy: 2026-11-16, commit `43a44ce6dbe5777af767c108563f08a0fae43d4a`. Render staging service last live deploy: 2026-11-15, commit `10c745bb2cdf0d494b6e42d91c7170c9b7ca606c`.
+- Both Render services are on the free plan, have automatic deployment disabled, and have no health-check path configured. They are not evidence that the current release branches are deployed or production-ready.
+- No database migration, environment-variable change, or deployment was performed during this audit.
+
 ## Required before customer production launch
 
 ### Infrastructure and database
