@@ -311,7 +311,7 @@ app.post('/api/v1/billing/payments/:paymentId/reconcile',billingCheckoutRateLimi
  if(payment.status!=='pending'||!payment.checkoutRequestId)return res.json({data:{paymentId:payment.id,status:payment.status}});
  try{
   const query=await queryStkPush(payment.checkoutRequestId);
-  const result=await subscriptionPaymentRepository.processQuery({agencyId:agency.id,paymentId:payment.id,resultCode:query.resultCode,resultDescription:query.resultDescription,payload:query});
+  const result=await subscriptionPaymentRepository.processQuery({agencyId:agency.id,paymentId:payment.id,actorUserId:req.principal!.id,resultCode:query.resultCode,resultDescription:query.resultDescription,payload:query});
   return res.json({data:{paymentId:payment.id,status:result.status,resultDescription:query.resultDescription}});
  }catch{return res.status(502).json({error:{code:'MPESA_QUERY_FAILED',message:'Safaricom could not confirm this payment yet. It remains pending.'}});}
 });
