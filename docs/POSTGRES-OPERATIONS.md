@@ -68,7 +68,7 @@ RESTORE_CONFIRM='RESTORE_TO_EMPTY_DATABASE' \
 bash scripts/restore-postgres.sh
 ```
 
-The restore script validates the checksum, checks that the target contains no user objects, decrypts the dump as a stream, and uses a single PostgreSQL restore transaction. It does not drop objects or clear an existing database.
+The restore script validates the checksum, checks that the target contains no user relations, routines, types, non-default schemas, large objects, event triggers, publications, subscriptions, or foreign-data objects, decrypts the dump as a stream, and uses a single PostgreSQL restore transaction. It does not drop objects or clear an existing database.
 
 ## Post-restore verification
 
