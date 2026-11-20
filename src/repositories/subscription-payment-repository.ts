@@ -60,7 +60,7 @@ export class SubscriptionPaymentRepository {
   const r=await pool.query('SELECT p.*,s.code AS plan_code FROM subscription_payments p JOIN subscription_plans s ON s.id=p.plan_id WHERE p.agency_id=$1 AND p.id=$2',[agencyId,paymentId]);
   return r.rows[0]?this.mapPayment(r.rows[0]):null;
  }
- async processQuery(input:{agencyId:string;paymentId:string;resultCode:number|null;resultDescription:string;payload:unknown}):Promise<{found:boolean;status:string;duplicate:boolean}>{
+ async processQuery(input:{agencyId:string;paymentId:string;actorUserId?:string;resultCode:number|null;resultDescription:string;payload:unknown}):Promise<{found:boolean;status:string;duplicate:boolean}>{
   if(!pool)throw new Error('PERSISTENCE_REQUIRED');
   const client=await pool.connect();
   try{
@@ -68,11 +68,18 @@ export class SubscriptionPaymentRepository {
    const found=await client.query('SELECT p.*,s.billing_interval FROM subscription_payments p JOIN subscription_plans s ON s.id=p.plan_id WHERE p.agency_id=$1 AND p.id=$2 FOR UPDATE',[input.agencyId,input.paymentId]);
    const payment=found.rows[0];
    if(!payment){await client.query('ROLLBACK');return {found:false,status:'not_found',duplicate:false};}
+   const recordReconciliationAudit=async(status:string)=>{
+    if(!input.actorUserId)return;
+    await client.query(
+     "INSERT INTO audit_events(id,agency_id,actor_user_id,action,entity_type,entity_id,metadata) VALUES($1,$2,$3,'agency.subscription.payment_reconciliation_checked','subscription_payment',$4,$5::jsonb)",
+     [randomUUID(),input.agencyId,input.actorUserId,payment.id,JSON.stringify({status,resultCode:input.resultCode})]
+    );
+   };
    if(payment.status==='succeeded'||payment.status==='failed'||payment.status==='expired'){await client.query('COMMIT');return {found:true,status:payment.status,duplicate:true};}
-   if(input.resultCode===null){await client.query('COMMIT');return {found:true,status:'pending',duplicate:false};}
+   if(input.resultCode===null){await recordReconciliationAudit('pending');await client.query('COMMIT');return {found:true,status:'pending',duplicate:false};}
    if(input.resultCode!==0){
     await client.query('UPDATE subscription_payments SET status=\'failed\',result_code=$3,result_description=$4,callback_payload=$5::jsonb,updated_at=now() WHERE id=$1 AND agency_id=$2',[payment.id,input.agencyId,String(input.resultCode),input.resultDescription,JSON.stringify(input.payload)]);
-    await client.query('COMMIT');return {found:true,status:'failed',duplicate:false};
+    await recordReconciliationAudit('failed');await client.query('COMMIT');return {found:true,status:'failed',duplicate:false};
    }
    const current=await client.query("SELECT * FROM agency_subscriptions WHERE agency_id=$1 AND status IN ('active','trialing','past_due') ORDER BY created_at DESC LIMIT 1 FOR UPDATE",[payment.agency_id]);
    let subscriptionId:string;
@@ -84,7 +91,7 @@ export class SubscriptionPaymentRepository {
     subscriptionId=String(inserted.rows[0].id);
    }
    await client.query("UPDATE subscription_payments SET status='succeeded',result_code='0',result_description=$2,callback_payload=$3::jsonb,paid_at=now(),subscription_id=$4,updated_at=now() WHERE id=$1",[payment.id,input.resultDescription,JSON.stringify(input.payload),subscriptionId]);
-   await client.query('COMMIT');return {found:true,status:'succeeded',duplicate:false};
+   await recordReconciliationAudit('succeeded');await client.query('COMMIT');return {found:true,status:'succeeded',duplicate:false};
   }catch(error){await client.query('ROLLBACK');throw error;}finally{client.release();}
  }
  async processCallback(input:{checkoutRequestId:string;resultCode:number;resultDescription:string;amount:number|null;receipt:string|null;payload:unknown}):Promise<{found:boolean;status:string;duplicate:boolean}>{
