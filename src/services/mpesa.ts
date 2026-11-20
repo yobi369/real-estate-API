@@ -83,7 +83,8 @@ export function parseStkCallback(input:unknown):ParsedStkCallback|null{
  };
  if(typeof value.CheckoutRequestID!=='string'||value.CheckoutRequestID.trim().length===0||value.CheckoutRequestID.length>128)return null;
  if(typeof value.ResultCode!=='number'||!Number.isSafeInteger(value.ResultCode)||value.ResultCode<0)return null;
- const items=Array.isArray(value.CallbackMetadata?.Item)?value.CallbackMetadata.Item:[];
+ const rawItems=value.CallbackMetadata?.Item;
+ const items=Array.isArray(rawItems)?rawItems.filter((item):item is {Name?:unknown;Value?:unknown}=>Boolean(item)&&typeof item==='object'):[];
  const amountValue=items.find(item=>item.Name==='Amount')?.Value;
  const receiptValue=items.find(item=>item.Name==='MpesaReceiptNumber')?.Value;
  const amount=typeof amountValue==='number'&&Number.isSafeInteger(amountValue)&&amountValue>=0?amountValue:null;
