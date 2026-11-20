@@ -15,7 +15,7 @@ This checklist separates implemented controls from external or incomplete releas
 - [ ] Verify callback delivery, missing-callback reconciliation, duplicate callbacks, user cancellation, timeouts, and amount mismatch against the Safaricom sandbox; confirm production PayBill onboarding and credentials.
 - [x] Public reads restricted to published listings; public responses omit owner and agency identifiers.
 - [x] Input validation, Helmet, configured CORS, request IDs, redacted sensitive headers, and bounded JSON body parsing.
-- [x] Process-local rate limits for bootstrap, registration, login, public search/demo, and enquiries; limits are not distributed.
+- [x] Shared PostgreSQL fixed-window rate-limiting implementation is available in stacked security PR #11: separate namespaces cover bootstrap, registration, login, M-Pesa checkout, public search, and enquiries; client IPs are keyed HMAC digests and production fails closed if the shared store is unavailable. Staging verification and threshold tuning remain outstanding.
 - [x] Security regression tests for headers, auth throttling, oversized JSON payload handling, enquiry routing, invitation lifecycle, agency membership authorization/auditing, and two-step ownership transfer. CI evidence is recorded in the latest workflow run.
 - [x] Dependency-free HTTP benchmark runner and documented evidence procedure; no production capacity claim has been established.
 - [x] CI workflow audits production dependencies and runs typecheck, tests, build, and lint on Node 22/24 with PostgreSQL 16.
@@ -34,7 +34,7 @@ This checklist separates implemented controls from external or incomplete releas
 - [ ] Confirm the production service plan, availability characteristics, health checks, monitoring, and capacity are suitable for the agreed customer SLA.
 
 ### Identity and application security
-- [ ] Replace process-local rate limits with shared/distributed enforcement or an edge/WAF equivalent before scaling horizontally.
+- [ ] Verify the shared PostgreSQL rate limiter in staging, tune thresholds, monitor database load, and retain edge/WAF protection for volumetric attacks; review proxy trust configuration for the actual hosting topology.
 - [ ] Implement email verification, secure password reset, token revocation/rotation, and account/session lifecycle controls.
 - [ ] Extend audit events to remaining privileged operations and complete the independent audit-coverage review; agency, listing, invitation, and membership mutations are covered.
 - [x] Implement invitation create/accept/revoke endpoints with hashed expiring tokens, email matching, and transactional audit events.
