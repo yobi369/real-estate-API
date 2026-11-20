@@ -14,7 +14,7 @@ mkdir -m 700 "$pg_tools"
 for tool in pg_dump pg_restore; do
   cat >"$pg_tools/$tool" <<'WRAPPER'
 #!/usr/bin/env bash
-exec docker run --rm --network host postgres:16 TOOL_PLACEHOLDER "$@"
+exec docker run --rm -i --network host postgres:16 TOOL_PLACEHOLDER "$@"
 WRAPPER
   sed -i "s/TOOL_PLACEHOLDER/$tool/" "$pg_tools/$tool"
   chmod 700 "$pg_tools/$tool"
