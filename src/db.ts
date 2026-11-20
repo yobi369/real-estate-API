@@ -234,6 +234,13 @@ export async function migrate(targetPool: pg.Pool | null = migrationPool): Promi
         reset_at timestamptz NOT NULL
       );
       CREATE INDEX IF NOT EXISTS api_rate_limit_buckets_reset_idx ON api_rate_limit_buckets (reset_at);
+      DO $rate_limit_runtime_grants$
+      BEGIN
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname='secure_properties_runtime') THEN
+          EXECUTE 'GRANT SELECT,INSERT,UPDATE,DELETE ON TABLE public.api_rate_limit_buckets TO secure_properties_runtime';
+        END IF;
+      END
+      $rate_limit_runtime_grants$;
       CREATE UNIQUE INDEX IF NOT EXISTS subscription_payments_one_pending_per_agency_idx ON subscription_payments (agency_id) WHERE status IN ('initiated','pending');
       ALTER TABLE properties ADD COLUMN IF NOT EXISTS publication_status text NOT NULL DEFAULT 'published' CHECK (publication_status IN ('draft','published','archived'));
       CREATE INDEX IF NOT EXISTS properties_publication_status_created_idx ON properties (publication_status,created_at DESC);
