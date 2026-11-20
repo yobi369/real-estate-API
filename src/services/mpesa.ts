@@ -61,3 +61,35 @@ export async function queryStkPush(checkoutRequestId:string):Promise<StkQueryRes
  const resultCode=body.ResultCode===undefined||body.ResultCode===null?null:Number(body.ResultCode);
  return {responseCode:String(body.ResponseCode),resultCode:Number.isFinite(resultCode as number)?resultCode:null,resultDescription:String(body.ResultDesc??body.ResponseDescription??'Payment is still being processed')};
 }
+
+export type ParsedStkCallback = {
+ checkoutRequestId:string;
+ resultCode:number;
+ resultDescription:string;
+ amount:number|null;
+ receipt:string|null;
+ payload:{checkoutRequestId:string;resultCode:number;resultDescription:string;amount:number|null;receipt:string|null};
+};
+
+export function parseStkCallback(input:unknown):ParsedStkCallback|null{
+ if(!input||typeof input!=='object')return null;
+ const body=(input as {Body?:unknown}).Body;
+ if(!body||typeof body!=='object')return null;
+ const callback=(body as {stkCallback?:unknown}).stkCallback;
+ if(!callback||typeof callback!=='object')return null;
+ const value=callback as {
+  CheckoutRequestID?:unknown;ResultCode?:unknown;ResultDesc?:unknown;
+  CallbackMetadata?:{Item?:Array<{Name?:unknown;Value?:unknown}>};
+ };
+ if(typeof value.CheckoutRequestID!=='string'||value.CheckoutRequestID.trim().length===0||value.CheckoutRequestID.length>128)return null;
+ if(typeof value.ResultCode!=='number'||!Number.isSafeInteger(value.ResultCode)||value.ResultCode<0)return null;
+ const items=Array.isArray(value.CallbackMetadata?.Item)?value.CallbackMetadata.Item:[];
+ const amountValue=items.find(item=>item.Name==='Amount')?.Value;
+ const receiptValue=items.find(item=>item.Name==='MpesaReceiptNumber')?.Value;
+ const amount=typeof amountValue==='number'&&Number.isSafeInteger(amountValue)&&amountValue>=0?amountValue:null;
+ const receipt=typeof receiptValue==='string'&&receiptValue.trim().length>0&&receiptValue.length<=64?receiptValue.trim():null;
+ const resultDescription=typeof value.ResultDesc==='string'?value.ResultDesc.slice(0,500):'';
+ const checkoutRequestId=value.CheckoutRequestID.trim();
+ const payload={checkoutRequestId,resultCode:value.ResultCode,resultDescription,amount,receipt};
+ return {...payload,payload};
+}
