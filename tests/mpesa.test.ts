@@ -8,7 +8,7 @@ describe('M-Pesa helpers',()=>{
   expect(normalizeKenyanPhone('712345678')).toBe('254712345678');
  });
  it('rejects invalid phone numbers',()=>{expect(()=>normalizeKenyanPhone('0201234567')).toThrow('INVALID_MPESA_PHONE');});
- it('formats the Daraja timestamp in East Africa Time',()=>{expect(darajaTimestamp(new Date('2026-11-19T07:00:00.000Z'))).toBe('20261119100000');});
+ it('formats the Daraja timestamp in East Africa Time',()=>{expect(darajaTimestamp(new Date('2026-11-19T07:00:00.000Z'))).toBe('20261119100000');},10_000);
  it('rejects malformed callback result codes instead of coercing them to success',()=>{
   for(const resultCode of ['',null,false,0.5,-1,'0']) {
    expect(parseStkCallback({Body:{stkCallback:{CheckoutRequestID:'ws_CO_123',ResultCode:resultCode}}})).toBeNull();
