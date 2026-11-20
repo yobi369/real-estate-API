@@ -9,15 +9,15 @@
 - Authenticated agency operations resolve the selected agency against active membership. Property and enquiry repository operations are tenant-scoped; public listing reads expose published listings only.
 - Publication transitions and agency creation/bootstrap write audit events transactionally.
 - Parameterized PostgreSQL queries, foreign keys, constraints, and indexes.
-- Process-local rate limits: bootstrap 5 requests/15 minutes per IP; registration 10/15 minutes; login 10/15 minutes; public property/demo search 120/minute; enquiries 10/15 minutes. Authentication/search/enquiry limits are per process and are not a distributed abuse-control system.
+- PostgreSQL-backed fixed-window rate limits shared across application replicas: bootstrap 5 requests/15 minutes; registration 10/15 minutes; login 10/15 minutes; M-Pesa checkout 5/15 minutes; public property/demo search 120/minute; enquiries 10/15 minutes. Client IPs are stored as keyed HMAC-SHA256 digests, not raw addresses. Production fails closed with HTTP 503 if the shared store is unavailable; process-local fallback is limited to development/test.
 - HTTP benchmark runner is available through `npm run benchmark`; performance claims require recorded staging evidence.
 
 ## Known gaps before public launch
 
-- Replace process-local rate limits with a shared store or enforce equivalent edge/WAF controls before horizontal scaling. Review proxy trust configuration for the actual hosting topology.
+- Tune shared rate-limit thresholds and monitor PostgreSQL load in staging; retain edge/WAF protection for volumetric attacks. Review proxy trust configuration for the actual hosting topology.
 - Add email verification, secure password reset, account lockout/abuse workflows, and token revocation/rotation/session lifecycle.
-- Extend audit coverage to membership changes, invitation lifecycle, and additional administrative actions; listing create/update/delete/publication and agency creation/bootstrap are already audited transactionally.
-- Implement invitation create/accept/revoke workflows with single-use token verification and expiry enforcement.
+- Complete the independent audit-coverage review for remaining privileged actions; agency, membership, invitation, ownership-transfer, listing, subscription-cancellation, and manual payment-reconciliation actions are audited transactionally.
+- Invitation create/accept/revoke workflows are implemented with hashed single-use tokens, email matching, seven-day expiry, and transactional audit events. Automated invitation email delivery, resend, and expiry notifications remain outstanding.
 - Configure production PostgreSQL TLS, least-privilege database role, backups, retention, and restore drills.
 - Complete dependency/secret/static-analysis review, independent authorization review, penetration testing, and representative load testing.
 - Add monitoring, alerting, request timeouts, incident ownership, privacy/retention review, and deployment-specific smoke tests.
