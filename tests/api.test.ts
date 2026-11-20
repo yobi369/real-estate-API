@@ -53,6 +53,9 @@ describe('subscription payment lifecycle',()=>{
   expect(afterDuplicate.rows[0]!.current_period_end.toISOString()).toBe(periodEnd);
   const cancel=await request(app).post('/api/v1/billing/subscription/cancel').set('Authorization','Bearer '+owner).set('X-Agency-ID',agency);
   expect(cancel.status).toBe(200);
+  const cancellationAudit=await pool.query<{action:string;entity_id:string}>("SELECT action,entity_id FROM audit_events WHERE agency_id=$1 AND action='agency.subscription.cancellation_scheduled'",[agency]);
+  expect(cancellationAudit.rows).toHaveLength(1);
+  expect(cancellationAudit.rows[0]?.action).toBe('agency.subscription.cancellation_scheduled');
   const current=await request(app).get('/api/v1/billing/subscription').set('Authorization','Bearer '+owner).set('X-Agency-ID',agency);
   expect(current.body.data.subscription.cancelAtPeriodEnd).toBe(true);
   const otherOwner=await register('billing-payment-owner2@example.com');
