@@ -36,8 +36,9 @@ export function createRateLimiter(options: RateLimitOptions): RequestHandler {
       next();
     };
 
-    if (pool) {
-      void pool.query<{ request_count: number; reset_at: Date }>(
+    const databasePool = pool;
+    if (databasePool) {
+      void databasePool.query<{ request_count: number; reset_at: Date }>(
         `INSERT INTO api_rate_limit_buckets(bucket_key,request_count,reset_at)
          VALUES($1,1,now()+($2::double precision * interval '1 millisecond'))
          ON CONFLICT(bucket_key) DO UPDATE SET
@@ -54,7 +55,7 @@ export function createRateLimiter(options: RateLimitOptions): RequestHandler {
         applyLimit(Number(row.request_count), new Date(row.reset_at).getTime());
         operations += 1;
         if (operations % 1000 === 0) {
-          void pool.query(
+          void databasePool.query(
             "DELETE FROM api_rate_limit_buckets WHERE bucket_key IN (SELECT bucket_key FROM api_rate_limit_buckets WHERE reset_at < now()-interval '1 hour' ORDER BY reset_at LIMIT 250)"
           ).catch(() => undefined);
         }
