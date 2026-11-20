@@ -16,7 +16,11 @@ export class SubscriptionPaymentRepository {
   try{
    await client.query('BEGIN');
    const existing=await client.query('SELECT p.*,s.code AS plan_code FROM subscription_payments p JOIN subscription_plans s ON s.id=p.plan_id WHERE p.agency_id=$1 AND p.idempotency_key=$2 FOR UPDATE',[agencyId,idempotencyKey]);
-   if(existing.rows[0]){await client.query('COMMIT');return {payment:this.mapPayment(existing.rows[0]),created:false};}
+   if(existing.rows[0]){
+    const row=existing.rows[0];
+    if(String(row.plan_id)!==plan.id||String(row.phone_number)!==phone||Number(row.amount_minor)!==plan.priceMinor)throw new Error('IDEMPOTENCY_KEY_REUSED');
+    await client.query('COMMIT');return {payment:this.mapPayment(row),created:false};
+   }
    const active=await client.query("SELECT id FROM agency_subscriptions WHERE agency_id=$1 AND status IN ('active','trialing') AND current_period_end>now() LIMIT 1 FOR UPDATE",[agencyId]);
    if(active.rows[0])throw new Error('ACTIVE_SUBSCRIPTION');
    const id=randomUUID();
