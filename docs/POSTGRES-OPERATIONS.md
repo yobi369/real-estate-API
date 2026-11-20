@@ -102,3 +102,18 @@ The current migration body remains one idempotent DDL/backfill transaction and r
 ## Release gate
 
 A backup is not considered verified until an encrypted copy exists off-host and a restore has completed into an isolated empty target with the application-level checks above. Record the date, operator, backup age at recovery, restore duration, RPO/RTO achieved, and reviewer sign-off in the production-readiness evidence. The current Neon branch-copy drill is not an independent logical backup/restore drill.
+
+## Isolated staging migration rehearsal — 2026-11-20
+
+A disposable Neon child branch was created from the staging branch and used to replay the exact migration SQL from the `security/distributed-rate-limiting` branch. This is a rehearsal only; neither the shared staging branch nor production was migrated.
+
+- Source: staging branch snapshot (PostgreSQL 16).
+- Disposable target: `staging-migration-rehearsal-2026-11-20` (`br-damp-tree-aod6jsil`).
+- Before: one user, one inquiry, one media asset, and migration markers 1–2.
+- Applied: all 56 SQL statements from the application migration, in one transaction.
+- After: one user, one inquiry, one media asset, one legacy agency, one owner membership, three seeded subscription plans (all inactive), and migration markers 1–5.
+- Replayed the same 56 statements a second time: row counts remained unchanged; no duplicate legacy agency, membership, or plan was created.
+- Verified inquiry tenant backfill and preservation of the existing media asset.
+- Created a non-login runtime-role test principal on the disposable branch and verified schema USAGE plus SELECT/INSERT/UPDATE/DELETE on tables, while CREATE schema, TRUNCATE, TRIGGER, and REFERENCES remained denied. Default privileges for future tables and sequences were configured for the rehearsal role.
+
+This proves the current migration can be applied and replayed against a copy of the staging data. It does not prove the actual staging Render service is configured with the new runtime credential, that the staging service can start against the migrated schema, or that the production migration is approved. Keep the disposable branch until the evidence is reviewed; do not treat it as a backup or customer environment.
