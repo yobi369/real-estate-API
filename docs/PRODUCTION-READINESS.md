@@ -25,27 +25,29 @@ This checklist separates implemented controls from external or incomplete releas
 
 This is a point-in-time, read-only audit. Database row counts were queried without reading customer records.
 
-- Neon production and staging each report only schema migration versions 1 and 2. The agency, subscription, payment-ledger, and distributed rate-limit tables from the current release branches have not been applied to either environment.
-- Production row counts: 0 users, 0 properties, 0 enquiries, and 0 media assets.
-- Staging row counts: 1 user, 0 properties, 1 enquiry, and 1 media asset. The existing staging records were not inspected or modified.
-- Render production service last live deploy: 2026-11-16, commit `43a44ce6dbe5777af767c108563f08a0fae43d4a`. Render staging service last live deploy: 2026-11-15, commit `10c745bb2cdf0d494b6e42d91c7170c9b7ca606c`.
+- Neon production remains at schema migration versions 1 and 2; it has not been migrated. Production row counts remain 0 users, 0 properties, 0 enquiries, and 0 media assets.
+- Neon staging was migrated transactionally to schema versions 1–5 on 2026-11-20 after the same migration passed twice on a disposable staging-data clone. Staging now has 1 user, 0 properties, 1 enquiry, 1 media asset, 1 legacy agency, 1 owner membership, 3 seeded subscription plans (all inactive), and the shared rate-limit table.
+- The staging migration preserved existing user, enquiry, and media row counts; the existing enquiry was assigned to the legacy agency. Customer record contents were not queried.
+- A `secure_properties_runtime` NOLOGIN role template is configured on staging with schema USAGE, ordinary table DML, sequence access, and default privileges. It has no schema CREATE, table TRUNCATE, TRIGGER, or REFERENCES privileges. The Render staging service has not been switched to a login credential for this role.
+- Render production service last live deploy: 2026-11-16, commit `43a44ce6dbe5777af767c108563f08a0fae43d4a`. Render staging service last live deploy: 2026-11-15, commit `10c745bb2cdf0d494b6e42d91c7170c9b7ca606c`; the new application code has not been deployed there.
 - Both Render services are on the free plan, have automatic deployment disabled, and have no health-check path configured. They are not evidence that the current release branches are deployed or production-ready.
-- No database migration, environment-variable change, or deployment was performed during this audit.
+- The shared staging database migration was performed; no Render environment-variable changes or service deployments were performed. Production was not migrated.
 
 ## Required before customer production launch
 
 ### Infrastructure and database
-- [x] Provisioned the Neon production branch and created a least-privilege runtime role; the Render runtime connection is not yet configured or verified, and the current hosting tier/capacity is not approved for a customer SLA.
+- [x] Provisioned the Neon production branch and created a least-privilege runtime role; the Render production runtime connection is not yet configured or verified, and the current hosting tier/capacity is not approved for a customer SLA.
+- [x] Rehearsed the full v5 migration on a disposable copy of staging data and applied it to the shared staging database; existing record counts were preserved and the production database was left untouched.
 - [ ] Verify TLS settings for service and database connections in the target host.
 - [ ] Store a unique JWT secret and deployment credentials in a managed secret store.
 - [ ] Configure automated provider backups/retention and complete an independent encrypted off-host backup plus a restore drill.
 - [x] Move schema DDL/backfill out of application startup and provide a separate, explicit migration command using `MIGRATION_DATABASE_URL`.
 - [ ] Define migration rollback and deployment ownership; configure the Render runtime service to use the least-privilege `DATABASE_URL` role.
-- [ ] Configure CORS to the customer's approved origins and verify proxy trust settings.
+- [ ] Configure CORS to the customer's approved origins and verify the three-hop proxy trust setting after deployment; re-measure if the hosting topology or edge changes.
 - [ ] Confirm the production service plan, availability characteristics, health checks, monitoring, and capacity are suitable for the agreed customer SLA.
 
 ### Identity and application security
-- [ ] Verify the shared PostgreSQL rate limiter in staging, tune thresholds, monitor database load, and retain edge/WAF protection for volumetric attacks; review proxy trust configuration for the actual hosting topology.
+- [ ] Deploy the security branch to staging, verify the PostgreSQL rate limiter against live staging traffic, tune thresholds, monitor database load, and retain edge/WAF protection for volumetric attacks. The observed Render X-Forwarded-For chain was three hops (loopback socket, Render proxy, Cloudflare); PR #11 now trusts exactly those hops and tests rotating forged prefixes, but the new code is not deployed.
 - [ ] Implement email verification, secure password reset, token revocation/rotation, and account/session lifecycle controls.
 - [x] Record authenticated owner/admin payment status-query reconciliation in the agency audit log with actor attribution; agency, listing, invitation, ownership-transfer, membership, and subscription-cancellation mutations are also covered.
 - [ ] Complete an independent audit-coverage review for all privileged operations.
