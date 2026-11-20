@@ -43,5 +43,7 @@ jobs:
       - name: Audit production dependencies
         run: npm audit --omit=dev --audit-level=high
       - name: Validate PostgreSQL operations scripts
-        run: bash -n scripts/backup-postgres.sh scripts/restore-postgres.sh
+        run: bash -n scripts/backup-postgres.sh scripts/restore-postgres.sh scripts/test-restore-target-guard.sh
+      - name: Test restore target safety guard against PostgreSQL 16
+        run: bash scripts/test-restore-target-guard.sh
       - run: npm run verify
