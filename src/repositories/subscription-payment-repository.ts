@@ -97,7 +97,7 @@ export class SubscriptionPaymentRepository {
    if(!payment){await client.query('ROLLBACK');return {found:false,status:'not_found',duplicate:false};}
    if(payment.status==='succeeded'){
     const validDuplicate=input.amount!==null&&input.amount*100===Number(payment.amount_minor);
-    if(!payment.mpesa_receipt_number&&input.receipt&&validDuplicate)await client.query('UPDATE subscription_payments SET mpesa_receipt_number=$2,callback_payload=$3::jsonb,updated_at=now() WHERE id=$1',[payment.id,input.receipt,JSON.stringify(input.payload)]);
+    if(input.resultCode===0&&!payment.mpesa_receipt_number&&input.receipt&&validDuplicate)await client.query('UPDATE subscription_payments SET mpesa_receipt_number=$2,callback_payload=$3::jsonb,updated_at=now() WHERE id=$1',[payment.id,input.receipt,JSON.stringify(input.payload)]);
     await client.query('COMMIT');return {found:true,status:'succeeded',duplicate:true};
    }
    if(payment.status==='failed'||payment.status==='expired'){await client.query('COMMIT');return {found:true,status:payment.status,duplicate:true};}
