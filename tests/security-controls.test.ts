@@ -29,6 +29,11 @@ describe('API security controls', () => {
     expect(blocked.status).toBe(429);
     expect(blocked.body.error.code).toBe('RATE_LIMITED');
     expect(Number(blocked.headers['retry-after'])).toBeGreaterThan(0);
+    const persisted = await pool?.query<{ request_count: number }>(
+      "SELECT request_count FROM api_rate_limit_buckets WHERE bucket_key=$1",
+      [`auth-login:${ip}`]
+    );
+    expect(Number(persisted?.rows[0]?.request_count)).toBe(11);
   });
 
   it('rejects oversized JSON request bodies', async () => {
