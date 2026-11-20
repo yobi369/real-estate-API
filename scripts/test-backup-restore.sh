@@ -7,6 +7,20 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
 
+# Use PostgreSQL 16 client binaries to match the PostgreSQL 16 service exactly.
+# The runner's packaged client may be newer and emit settings unsupported by PG16.
+pg_tools="$tmp_dir/postgres16-tools"
+mkdir -m 700 "$pg_tools"
+for tool in pg_dump pg_restore; do
+  cat >"$pg_tools/$tool" <<'WRAPPER'
+#!/usr/bin/env bash
+exec docker run --rm --network host postgres:16 TOOL_PLACEHOLDER "$@"
+WRAPPER
+  sed -i "s/TOOL_PLACEHOLDER/$tool/" "$pg_tools/$tool"
+  chmod 700 "$pg_tools/$tool"
+done
+export PATH="$pg_tools:$PATH"
+
 identity="$tmp_dir/age-identity.txt"
 backup_dir="$tmp_dir/backups"
 mkdir -m 700 "$backup_dir"
