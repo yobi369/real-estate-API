@@ -22,6 +22,7 @@ The demo inventory is isolated from customer listings. It is not a live marketpl
 - Email/password registration and login, scrypt password hashing, expiring HMAC-signed bearer tokens, administrator-only listing publication, one-time first-admin bootstrap, and owner/admin authorization for modifications.
 - Multi-agency tenancy with agency-scoped listing and enquiry access, email-bound invitations, owner/admin membership controls, and two-step recipient-accepted ownership transfer.
 - Public enquiry submission with PostgreSQL persistence and an agency-scoped owner/admin enquiry inbox.
+- PostgreSQL-backed distributed fixed-window rate limits for authentication, billing checkout, public search, and enquiries; production fails closed if the shared store is unavailable, and client IPs are stored as keyed HMAC digests rather than raw addresses.
 - Health/readiness checks, OpenAPI/Swagger, GitHub Actions CI on Node 22/24 with PostgreSQL 16, and documented production gates.
 - Read-only demo endpoint at `GET /demo/properties`, with city, type, transaction, price and text filters.
 
