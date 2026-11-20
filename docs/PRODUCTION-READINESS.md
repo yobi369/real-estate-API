@@ -49,6 +49,8 @@ This is a point-in-time, read-only audit. Database row counts were queried witho
 - [ ] Implement email verification, secure password reset, token revocation/rotation, and account/session lifecycle controls.
 - [x] Record authenticated owner/admin payment status-query reconciliation in the agency audit log with actor attribution; agency, listing, invitation, ownership-transfer, membership, and subscription-cancellation mutations are also covered.
 - [ ] Complete an independent audit-coverage review for all privileged operations.
+
+Owner/admin Daraja status-query reconciliation records the actor, payment ID, confirmed status, and provider result code in the same database transaction as the payment/subscription state change. Provider callbacks are external events and do not have an authenticated human actor.
 - [x] Implement invitation create/accept/revoke endpoints with hashed expiring tokens, email matching, and transactional audit events.
 - [x] Implement owner-initiated, recipient-accepted ownership transfer with hashed 48-hour tokens, same-agency active-admin eligibility, transactional role swap, and audit events.
 - [ ] Complete dependency, secret, and static-analysis review and resolve material findings.
