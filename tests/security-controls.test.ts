@@ -50,13 +50,10 @@ describe('API security controls', () => {
 
   it('grants the runtime role only the shared rate-limit table privileges it needs', async () => {
     if (!pool) return;
-    await pool.query(`DO $
-      BEGIN
-        IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='secure_properties_runtime') THEN
-          CREATE ROLE secure_properties_runtime;
-        END IF;
-      END
-    $;`);
+    const roleExists = await pool.query<{ exists: boolean }>(
+      "SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='secure_properties_runtime') AS exists"
+    );
+    if (!roleExists.rows[0]?.exists) await pool.query('CREATE ROLE secure_properties_runtime');
     await migrate();
     const privileges = await pool.query<{
       can_select: boolean; can_insert: boolean; can_update: boolean; can_delete: boolean;
