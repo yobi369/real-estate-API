@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { pool } from '../db.js';
 
 export type SubscriptionPlan = {
@@ -46,10 +47,22 @@ export class SubscriptionRepository {
    cancelAtPeriodEnd:Boolean(row.cancel_at_period_end),plan:mapPlan(row)
   };
  }
- async scheduleCancellation(agencyId:string):Promise<boolean>{
+ async scheduleCancellation(agencyId:string,actorUserId:string):Promise<boolean>{
   if(!pool)throw new Error('PERSISTENCE_REQUIRED');
-  const result=await pool.query(`UPDATE agency_subscriptions SET cancel_at_period_end=true,updated_at=now() WHERE agency_id=$1 AND status IN ('active','trialing') AND current_period_end>now() RETURNING id`,[agencyId]);
-  return result.rowCount===1;
+  const client=await pool.connect();
+  try{
+   await client.query('BEGIN');
+   const current=await client.query<{id:string;current_period_end:Date}>(`SELECT id,current_period_end FROM agency_subscriptions WHERE agency_id=$1 AND status IN ('active','trialing') AND current_period_end>now() ORDER BY created_at DESC LIMIT 1 FOR UPDATE`,[agencyId]);
+   const subscription=current.rows[0];
+   if(!subscription){await client.query('ROLLBACK');return false;}
+   await client.query('UPDATE agency_subscriptions SET cancel_at_period_end=true,updated_at=now() WHERE id=$1',[subscription.id]);
+   await client.query(
+    "INSERT INTO audit_events(id,agency_id,actor_user_id,action,entity_type,entity_id,metadata) VALUES($1,$2,$3,'agency.subscription.cancellation_scheduled','agency_subscription',$4,$5::jsonb)",
+    [randomUUID(),agencyId,actorUserId,subscription.id,JSON.stringify({cancelAtPeriodEnd:true,currentPeriodEnd:subscription.current_period_end.toISOString()})]
+   );
+   await client.query('COMMIT');
+   return true;
+  }catch(error){await client.query('ROLLBACK');throw error;}finally{client.release();}
  }
  async listPayments(agencyId:string,limit=20):Promise<PaymentSummary[]>{
   if(!pool)throw new Error('PERSISTENCE_REQUIRED');
