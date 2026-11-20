@@ -42,9 +42,14 @@ if BACKUP_FILE="${backups[0]}" \
    AGE_IDENTITY_FILE="$identity" \
    TARGET_DATABASE_URL="$target_database_url" \
    RESTORE_CONFIRM='RESTORE_TO_EMPTY_DATABASE' \
-     bash "$script_dir/restore-postgres.sh" >/dev/null 2>&1; then
+     bash "$script_dir/restore-postgres.sh" >"$tmp_dir/second-restore.log" 2>&1; then
   echo "Restore script unexpectedly accepted a non-empty target" >&2
   exit 1
 fi
+grep -q "Refusing restore: target database contains" "$tmp_dir/second-restore.log" || {
+  cat "$tmp_dir/second-restore.log" >&2
+  echo "Restore failed for a reason other than the non-empty target guard" >&2
+  exit 1
+}
 
 echo "Encrypted PostgreSQL backup and restore passed; non-empty target was refused."
