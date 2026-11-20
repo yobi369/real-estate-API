@@ -59,7 +59,12 @@ const billingCheckoutRateLimit=createRateLimiter({namespace:'billing-checkout',w
 const publicSearchRateLimit=createRateLimiter({namespace:'public-search',windowMs:60*1000,max:120});
 const inquiryRateLimit=createRateLimiter({namespace:'public-inquiry',windowMs:15*60*1000,max:10});
 
-app.disable('x-powered-by');app.set('trust proxy',1);app.use(helmet());
+app.disable('x-powered-by');
+// Render staging logs show the socket is loopback and X-Forwarded-For is
+// client, Cloudflare, Render proxy. Trust only those three nearest hops so
+// a client-supplied prefix remains untrusted when Express resolves req.ip.
+app.set('trust proxy',3);
+app.use(helmet());
 app.use(cors({origin:config.CORS_ORIGIN.split(',').map(v=>v.trim()),credentials:false}));
 app.use(express.json({limit:'1mb',strict:true}));
 app.use(pinoHttp({level:config.LOG_LEVEL,genReqId:(req,res)=>{const h=req.headers['x-request-id'];const id=typeof h==='string'&&/^[a-zA-Z0-9._-]{1,100}$/.test(h)?h:randomUUID();res.setHeader('x-request-id',id);return id;},redact:['req.headers.authorization','req.headers.cookie','req.headers.x-bootstrap-token','req.url']}));
