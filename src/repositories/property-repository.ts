@@ -60,7 +60,8 @@ export class PropertyRepository{
     if(agencyId){
      await client.query('SELECT id FROM agencies WHERE id=$1 FOR UPDATE',[agencyId]);
      const plan=await client.query<{max_listings:number|null}>(`SELECT p.max_listings FROM agency_subscriptions s JOIN subscription_plans p ON p.id=s.plan_id WHERE s.agency_id=$1 AND s.status IN ('active','trialing') AND s.current_period_end>now() ORDER BY s.created_at DESC LIMIT 1`,[agencyId]);
-     if(plan.rows[0]&&plan.rows[0].max_listings!==null){
+     if(!plan.rows[0])throw new Error('SUBSCRIPTION_REQUIRED');
+     if(plan.rows[0].max_listings!==null){
       const count=await client.query<{count:string}>(`SELECT count(*)::text AS count FROM properties WHERE agency_id=$1 AND publication_status<>'archived'`,[agencyId]);
       if(Number(count.rows[0]?.count??0)>=plan.rows[0].max_listings)throw new Error('LISTING_LIMIT_REACHED');
      }
