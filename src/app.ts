@@ -122,7 +122,7 @@ app.post('/api/v1/auth/login',authLoginRateLimit,async(req,res)=>{const result=a
 app.post('/api/v1/auth/password-reset/request',passwordResetRequestRateLimit,async(req,res)=>{
  if(!isEmailDeliveryConfigured())return res.status(503).json({error:{code:'EMAIL_DELIVERY_UNAVAILABLE',message:'Password recovery email delivery is not configured'}});
  try{await requestPasswordReset(req.body);return res.status(202).json({data:{message:'If an account exists for that email, password reset instructions will be sent.'}});}
- catch(error){if(error instanceof Error&&error.message==='INVALID_EMAIL')return res.status(400).json({error:{code:'VALIDATION_ERROR',message:'A valid email address is required'}});return res.status(503).json({error:{code:'EMAIL_DELIVERY_UNAVAILABLE',message:'Password recovery email could not be sent'}});}
+ catch(error){if(error instanceof Error&&error.message==='INVALID_EMAIL')return res.status(400).json({error:{code:'VALIDATION_ERROR',message:'A valid email address is required'}});if(error instanceof Error&&error.message==='EMAIL_DELIVERY_FAILED')return res.status(202).json({data:{message:'If an account exists for that email, password reset instructions will be sent.'}});return res.status(503).json({error:{code:'PASSWORD_RESET_UNAVAILABLE',message:'Password recovery is temporarily unavailable'}});}
 });
 app.post('/api/v1/auth/password-reset/complete',passwordResetCompleteRateLimit,async(req,res)=>{
  try{const completed=await completePasswordReset(req.body);return completed?res.status(204).end():res.status(400).json({error:{code:'RESET_TOKEN_INVALID',message:'The reset link is invalid, expired, or already used'}});}
