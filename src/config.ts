@@ -16,7 +16,11 @@ const schema=z.object({
  MPESA_SHORTCODE:z.string().regex(/^\d{5,7}$/).optional(),
  MPESA_PASSKEY:z.string().min(1).optional(),
  MPESA_CALLBACK_BASE_URL:z.string().url().optional(),
- MPESA_CALLBACK_SECRET:z.string().regex(/^[A-Za-z0-9_-]{32,128}$/).optional(),\n EMAIL_API_URL:z.string().url().optional(),\n EMAIL_API_KEY:z.string().min(1).optional(),\n EMAIL_FROM:z.string().email().optional(),\n PUBLIC_APP_URL:z.string().url().optional()
+ MPESA_CALLBACK_SECRET:z.string().regex(/^[A-Za-z0-9_-]{32,128}$/).optional(),
+ EMAIL_API_URL:z.string().url().optional(),
+ EMAIL_API_KEY:z.string().min(1).optional(),
+ EMAIL_FROM:z.string().email().optional(),
+ PUBLIC_APP_URL:z.string().url().optional()
 });
 const parsed=schema.safeParse(process.env);
 if(!parsed.success)throw new Error('Invalid environment configuration: '+parsed.error.issues.map(i=>i.path.join('.')+': '+i.message).join('; '));
