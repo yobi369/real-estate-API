@@ -1,4 +1,4 @@
-import {beforeEach,describe,expect,it} from 'vitest';
+import {beforeEach,describe,expect,it,vi} from 'vitest';
 import request from 'supertest';
 import {randomUUID} from 'node:crypto';
 import {app,propertyRepository} from '../src/app.js';
@@ -36,6 +36,7 @@ it('sends one-time password reset links, revokes existing sessions, and rejects 
  const requested=await request(app).post('/api/v1/auth/password-reset/request').set('X-Forwarded-For','198.51.100.210').send({email:'reset-owner@example.com'});
  expect(requested.status).toBe(202);
  expect(requested.body.data.message).toContain('If an account exists');
+ await vi.waitFor(()=>expect(delivered).not.toBeNull());
  expect(delivered?.to).toBe('reset-owner@example.com');
  const link=new URL(delivered!.resetUrl);
  const token=link.searchParams.get('token');
