@@ -38,6 +38,7 @@ const invitationAcceptSchema=z.object({token:z.string().min(32).max(128)}).stric
 const ownershipTransferCreateSchema=z.object({targetUserId:z.string().uuid()}).strict();
 const agencyCreateSchema=z.object({name:z.string().trim().min(2).max(160)}).strict();
 const stkPushSchema=z.object({planCode:z.string().trim().min(2).max(60),phoneNumber:z.string().trim().min(8).max(20)}).strict();
+const passwordResetRequestSchema=z.object({email:z.string().trim().email().max(254).transform(v=>v.toLowerCase())}).strict();
 const resolveActiveAgency=async(req:express.Request,res:express.Response):Promise<{id:string;role:'owner'|'admin'|'agent'|'viewer'}|null>=>{
  const agencyId=req.header('x-agency-id');
  if(!agencyId||!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(agencyId)){
@@ -119,12 +120,19 @@ app.get('/openapi.json',(_req,res)=>res.json(spec));app.use('/docs',swaggerUi.se
 app.post('/api/v1/admin/bootstrap',authBootstrapRateLimit,async(req,res)=>{const result=await bootstrapAdmin(req.body,req.header('x-bootstrap-token')??'');if('error'in result){const status=result.error==='DISABLED'?404:result.error==='EXISTS'?409:400;return res.status(status).json({error:{code:result.error,message:result.error==='DISABLED'?'Bootstrap is unavailable':result.error==='EXISTS'?'An administrator already exists':'Administrator details are invalid'}});}return res.status(201).json({data:{user:result.principal,token:result.token,tokenType:'Bearer',expiresIn:config.JWT_TTL_SECONDS}});});
 app.post('/api/v1/auth/register',authRegisterRateLimit,async(req,res)=>{const result=await registerUser(req.body);if('error'in result)return res.status(result.error==='EXISTS'?409:400).json({error:{code:result.error==='EXISTS'?'EMAIL_EXISTS':'VALIDATION_ERROR',message:result.error==='EXISTS'?'An account with this email already exists':'Email or password does not meet requirements'}});return res.status(201).json({data:{user:result.principal,token:result.token,tokenType:'Bearer',expiresIn:config.JWT_TTL_SECONDS}});});
 app.post('/api/v1/auth/login',authLoginRateLimit,async(req,res)=>{const result=await loginUser(req.body);if(!result)return res.status(401).json({error:{code:'INVALID_CREDENTIALS',message:'Email or password is incorrect'}});return res.json({data:{user:result.principal,token:result.token,tokenType:'Bearer',expiresIn:config.JWT_TTL_SECONDS}});});
-app.post('/api/v1/auth/password-reset/request',passwordResetRequestRateLimit,async(req,res)=>{
+app.post('/api/v1/auth/password-reset/request',passwordResetRequestRateLimit,(req,res)=>{
  if(!isEmailDeliveryConfigured())return res.status(503).json({error:{code:'EMAIL_DELIVERY_UNAVAILABLE',message:'Password recovery email delivery is not configured'}});
- try{await requestPasswordReset(req.body);return res.status(202).json({data:{message:'If an account exists for that email, password reset instructions will be sent.'}});}
- catch(error){if(error instanceof Error&&error.message==='INVALID_EMAIL')return res.status(400).json({error:{code:'VALIDATION_ERROR',message:'A valid email address is required'}});if(error instanceof Error&&error.message==='EMAIL_DELIVERY_FAILED')return res.status(202).json({data:{message:'If an account exists for that email, password reset instructions will be sent.'}});return res.status(503).json({error:{code:'PASSWORD_RESET_UNAVAILABLE',message:'Password recovery is temporarily unavailable'}});}
+ const parsed=passwordResetRequestSchema.safeParse(req.body);
+ if(!parsed.success)return res.status(400).json({error:{code:'VALIDATION_ERROR',message:'A valid email address is required'}});
+ // Return immediately for both existing and unknown accounts. Delivery runs
+ // asynchronously so response timing does not disclose account existence.
+ void requestPasswordReset(parsed.data).catch(error=>{
+  const category=error instanceof Error&&error.message==='EMAIL_DELIVERY_FAILED'?'provider':'internal';
+  console.error('password_reset_request_failed',category);
+ });
+ return res.status(202).json({data:{message:'If an account exists for that email, password reset instructions will be sent.'}});
 });
-app.post('/api/v1/auth/password-reset/complete',passwordResetCompleteRateLimit,async(req,res)=>{
+app.post('/api/v1/auth/password-reset/complete'',passwordResetCompleteRateLimit,async(req,res)=>{
  try{const completed=await completePasswordReset(req.body);return completed?res.status(204).end():res.status(400).json({error:{code:'RESET_TOKEN_INVALID',message:'The reset link is invalid, expired, or already used'}});}
  catch{return res.status(503).json({error:{code:'PASSWORD_RESET_UNAVAILABLE',message:'Password reset is temporarily unavailable'}});}
 });
