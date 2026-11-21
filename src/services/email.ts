@@ -60,6 +60,7 @@ export async function sendPasswordResetEmail(message: PasswordResetMessage): Pro
 }
 
 export function passwordResetUrl(token: string): string {
-  if (!config.APP_BASE_URL) throw new Error('APP_BASE_URL_NOT_CONFIGURED');
-  return new URL(`/reset-password?token=${encodeURIComponent(token)}`, config.APP_BASE_URL).toString();
+  const base = config.APP_BASE_URL ?? (config.NODE_ENV === 'test' ? 'https://test.invalid' : null);
+  if (!base) throw new Error('APP_BASE_URL_NOT_CONFIGURED');
+  return new URL(`/reset-password?token=${encodeURIComponent(token)}`, base).toString();
 }
