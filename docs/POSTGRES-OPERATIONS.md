@@ -9,7 +9,7 @@ This runbook is for the Real Estate API's PostgreSQL database. It is intentional
 - Use a dedicated disposable restore database/branch and verify its identity before restoring.
 - Backups contain account and contact data if such data is later stored. Encrypt them, restrict access, and apply an approved retention/deletion policy.
 - Keep the age private identity separate from the backup files and from the application runtime.
-- Do not put database URLs, passwords, private age identities, or decrypted dumps in Git, logs, tickets, or chat.
+- Do not put database URLs, passwords, private age identities, OAuth refresh tokens, or decrypted dumps in Git, logs, tickets, or chat.
 - The scripts below create encrypted database dumps and refuse to restore into a non-empty target. They do not provision storage, configure provider retention, or prove that off-host copies are recoverable.
 
 ## Required backup policy decisions
@@ -26,7 +26,7 @@ Provider-managed Neon restore history is useful for point-in-time recovery, but 
 
 ## Tools
 
-Install PostgreSQL client tools matching the deployed PostgreSQL major version (the current Neon project is PostgreSQL 16) and [age](https://age-encryption.org/).
+Install PostgreSQL client tools matching the deployed PostgreSQL major version (the current Neon project is PostgreSQL 16), [age](https://age-encryption.org/), and optionally [rclone](https://rclone.org/) or AWS CLI v2 for off-host copies.
 
 Generate an age identity on a trusted operator machine and store the private identity securely:
 
@@ -54,11 +54,36 @@ The script:
 3. Creates a SHA-256 checksum.
 4. Restricts local file permissions.
 
-Copy both the `.dump.age` and `.dump.age.sha256` files to a separate, encrypted, access-controlled storage location. Verify the copied checksum. A local copy on the same host or volume is not an off-host backup.
+## Google Drive off-host copy (free personal Drive)
+
+Google Drive can be used without introducing an S3 bucket. A personal Google account's free storage quota is shared across Drive, Gmail, and Google Photos; check available space before selecting a retention period. This is a convenience destination, not an immutable backup vault.
+
+1. Install rclone on the trusted backup runner.
+2. Run `rclone config` interactively as the backup operator and create a remote named `gdrive` with the Google Drive backend. Complete Google's browser OAuth flow on the operator's own device.
+3. Keep the rclone config (which contains refresh credentials) outside the repository, restrict it to the backup operator, and provide it to the job through a protected file/secret mount. Never commit or print it.
+4. Create a private destination folder in Drive, for example `real-estate-api-backups`. Do not enable link sharing or public permissions.
+5. Set `BACKUP_RCLONE_DESTINATION='gdrive:real-estate-api-backups'` in the backup job environment. Set `RCLONE_CONFIG` to the protected config file path if it is not in rclone's default location.
+
+Example:
+
+```bash
+DATABASE_URL='(load from approved secret store)' \
+BACKUP_DIR='/secure-backup-volume/real-estate-api' \
+AGE_RECIPIENT='age1...' \
+BACKUP_RCLONE_DESTINATION='gdrive:real-estate-api-backups' \
+RCLONE_CONFIG='/secure-operator-secrets/rclone.conf' \
+bash scripts/backup-postgres.sh
+```
+
+The script uploads only the already age-encrypted `.dump.age` and its `.sha256` sidecar. It downloads both objects again, checks the dump digest, and compares the checksum sidecar before reporting success. The rclone remote is not created automatically; configure and authorize it privately first.
+
+Use the narrowest practical Google Drive scope in rclone's setup, and review the permissions requested by the OAuth flow. For a dedicated OAuth client, follow rclone's current Google Drive setup documentation; do not put a client secret or refresh token in GitHub issues, chat, or application logs.
+
+**Retention:** no automatic remote deletion is performed by the backup script. Start with manual inspection and an owner-approved retention schedule. Before enabling automated deletion, prove a restore from Drive and document retention, quota monitoring, and recovery access. Keep at least one separately protected copy of the age private identity; Drive backups cannot be decrypted without it.
 
 ## Optional S3-compatible off-host copy
 
-The backup script can upload the encrypted dump and checksum to a private S3-compatible object store after the local backup is written:
+The backup script can also upload the encrypted dump and checksum to a private S3-compatible object store:
 
 ```bash
 DATABASE_URL='(load from approved secret store)' \
@@ -72,20 +97,19 @@ AWS_DEFAULT_REGION='(provider region; R2 uses auto)' \
 bash scripts/backup-postgres.sh
 ```
 
-- Install AWS CLI v2 on the operator host.
 - Use a private bucket and credentials scoped to the single backup bucket/prefix with only the required object read/write permissions.
 - For Cloudflare R2, use the account's S3 endpoint and an R2 S3 token; never use a global Cloudflare API token for backup jobs.
-- The script uploads the `.dump.age` and `.sha256` objects, downloads the encrypted dump again, and compares SHA-256 digests before reporting the remote copy verified.
-- If `BACKUP_S3_URI` is absent, the script explicitly warns that the run created only a local backup. It does not silently claim off-host protection.
-- Configure and verify object lifecycle/retention separately in the storage provider. Do not enable automatic deletion until the retention policy is approved and a restore has been proven.
+- The script uploads the `.dump.age` and `.sha256` objects, downloads both again, and verifies the dump and checksum sidecar.
+- If `BACKUP_S3_URI` is absent, this path is skipped. If both off-host variables are absent, the script explicitly warns that the run created only a local backup.
+- Configure and verify object lifecycle/retention separately. Do not enable automatic deletion until the retention policy is approved and a restore has been proven.
 
-The CI integration test exercises this upload/download verification using a local mock S3 endpoint. It validates the script's copy and checksum flow, not live credentials, provider availability, or lifecycle policy.
+CI exercises both off-host transfer paths using local mock commands. This validates the copy/download/checksum flow, not live Google OAuth, a real Drive account, cloud availability, quota, or lifecycle policy.
 
 ## Automated backup/restore verification
 
-CI runs an end-to-end test against a disposable PostgreSQL 16 database. It generates an ephemeral age identity, writes a probe row, creates an encrypted logical backup, restores it into a newly created empty database, verifies the restored row, and confirms that a second restore is refused once the target is populated.
+CI runs an end-to-end test against a disposable PostgreSQL 16 database. It generates an ephemeral age identity, writes a probe row, creates an encrypted logical backup, restores it into a newly created empty database, verifies the restored row, and confirms that a second restore is refused once the target is populated. Mock S3 and rclone commands verify that both encrypted dump and checksum sidecar are uploaded and downloaded for checksum comparison.
 
-This validates the repository scripts and encryption/decryption flow in CI. It is not evidence of an off-host backup copy, scheduled retention, a production restore, or an achieved RPO/RTO.
+This validates the repository scripts and encryption/decryption flow in CI. It is not evidence of a real off-host backup copy, scheduled retention, a production restore, or an achieved RPO/RTO.
 
 ## Restore drill
 
