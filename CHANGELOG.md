@@ -19,7 +19,7 @@
 - Expanded CI to Node.js 22, 24, and 26 with dependency audits and PostgreSQL 16 operations checks.
 
 ### Not yet production-approved
-- Email verification, refresh-token rotation, and account abuse workflows remain outstanding. Password reset is implemented; live delivery requires a configured and verified email provider.
+- Refresh-token rotation and broader account-abuse monitoring remain outstanding. Email verification and password recovery are implemented; live delivery requires a configured and verified email provider.
 - Automated invitation email delivery.
 - Daraja sandbox/production provider acceptance, refunds, and Till/Buy Goods support.
 - Independent off-host backup/restore evidence, production infrastructure, monitoring, penetration testing, and customer acceptance.
