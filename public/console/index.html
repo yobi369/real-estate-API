@@ -30,6 +30,8 @@
           <button id="auth-submit" class="primary" type="submit">Sign in <span>→</span></button>
         </form>
         <button id="auth-switch" class="text-button" type="button">New to Secure Properties? Create an account</button>
+        <button id="forgot-password" class="text-button" type="button">Forgot your password?</button>
+        <button id="resend-verification" class="text-button hidden" type="button">Resend verification email</button>
         <p id="auth-message" class="notice" role="status"></p>
       </div>
     </section>
@@ -111,6 +113,35 @@
         </section>
         </section>
       </section>
+    </section>
+
+    <section id="recovery-view" class="auth-wrap hidden">
+      <div class="auth-copy"><p class="eyebrow">ACCOUNT SECURITY</p><h1>Secure access,<br><em>restored.</em></h1><p>Use a time-limited email link to verify your address or safely reset your password. Each link can be used once.</p></div>
+      <div class="auth-card">
+        <p class="eyebrow">ACCOUNT RECOVERY</p><h2 id="recovery-title">Reset your password</h2>
+        <form id="reset-request-form">
+          <p class="muted">Enter the email address associated with your account. If it exists, we will send a reset link.</p>
+          <label>Email address<input name="email" type="email" autocomplete="email" required maxlength="254" placeholder="you@agency.co.ke"></label>
+          <button class="primary" type="submit">Send reset link <span>→</span></button>
+        </form>
+        <form id="email-verification-request-form" class="hidden">
+          <p class="muted">Enter your account email to request a new verification link.</p>
+          <label>Email address<input name="email" type="email" autocomplete="email" required maxlength="254" placeholder="you@agency.co.ke"></label>
+          <button class="primary" type="submit">Send verification link <span>→</span></button>
+        </form>
+        <form id="reset-complete-form" class="hidden">
+          <input name="token" type="hidden">
+          <label>New password<input name="password" type="password" autocomplete="new-password" required minlength="12" maxlength="128" placeholder="At least 12 characters"></label>
+          <button class="primary" type="submit">Save new password <span>→</span></button>
+        </form>
+        <form id="verify-complete-form" class="hidden">
+          <input name="token" type="hidden">
+          <p class="muted">Confirm your email address using the secure verification link.</p>
+          <button class="primary" type="submit">Verify email address <span>→</span></button>
+        </form>
+        <p id="recovery-message" class="notice" role="status"></p>
+        <button id="back-to-signin" class="text-button" type="button">← Back to sign in</button>
+      </div>
     </section>
 
     <section id="create-agency-view" class="auth-wrap hidden">
