@@ -35,6 +35,36 @@ psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -q -c \
 DATABASE_URL="$DATABASE_URL" BACKUP_DIR="$backup_dir" AGE_RECIPIENT="$recipient" \
   bash "$script_dir/backup-postgres.sh"
 
+# Exercise the optional S3-compatible off-host upload path with a local fake
+# endpoint. The test verifies that both encrypted dump and checksum are
+# uploaded, and that the backup script downloads and verifies the dump.
+mock_bin="$tmp_dir/mock-bin"
+remote_root="$tmp_dir/mock-object-store"
+remote_backup_dir="$tmp_dir/remote-backups"
+mkdir -m 700 "$mock_bin" "$remote_root" "$remote_backup_dir"
+cat >"$mock_bin/aws" <<'MOCK_AWS'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+[[ "$1" == "s3" && "$2" == "cp" ]] || { echo "Unexpected mock AWS command" >&2; exit 2; }
+source_path="$3"
+destination_path="$4"
+if [[ "$source_path" == s3://* ]]; then
+  source_path="$REMOTE_ROOT/${source_path#s3://}"
+fi
+if [[ "$destination_path" == s3://* ]]; then
+  destination_path="$REMOTE_ROOT/${destination_path#s3://}"
+fi
+mkdir -p "$(dirname "$destination_path")"
+cp "$source_path" "$destination_path"
+MOCK_AWS
+chmod 700 "$mock_bin/aws"
+PATH="$mock_bin:$PATH" REMOTE_ROOT="$remote_root" DATABASE_URL="$DATABASE_URL" \
+  BACKUP_DIR="$remote_backup_dir" AGE_RECIPIENT="$recipient" \
+  BACKUP_S3_URI='s3://test-bucket/real-estate-api' \
+  bash "$script_dir/backup-postgres.sh"
+remote_objects="$(find "$remote_root" -type f | wc -l | tr -d ' ')"
+[[ "$remote_objects" == "2" ]] || { echo "Expected encrypted dump and checksum in remote store" >&2; exit 1; }
+
 mapfile -t backups < <(find "$backup_dir" -maxdepth 1 -type f -name '*.dump.age' -print)
 [[ "${#backups[@]}" -eq 1 ]] || { echo "Expected exactly one encrypted backup" >&2; exit 1; }
 
