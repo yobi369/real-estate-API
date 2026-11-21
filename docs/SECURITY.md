@@ -5,6 +5,7 @@
 - Helmet security headers, disabled Express fingerprint, configured CORS, strict Zod validation, 1 MiB JSON body limit, request IDs, and structured logging with authorization, cookies, bootstrap headers, and request URLs redacted.
 - Registration enforces a 12-character password with lowercase, uppercase, and numeric characters. Passwords are salted and derived with Node.js scrypt.
 - HMAC-SHA256 bearer tokens have bounded expiry and signature verification uses timing-safe comparison. The default TTL is one hour.
+- Each token is bound to a persisted `auth_sessions` record and a user. Every authenticated request verifies that the session remains active and loads the current user role from PostgreSQL; logout and account session management can revoke one session immediately.
 - First-admin bootstrap is secret-protected and one-time; production requires PostgreSQL and a non-default JWT secret. The bootstrap secret must be removed after initial setup.
 - Authenticated agency operations resolve the selected agency against the caller's active membership. Property, enquiry, invitation, membership, ownership-transfer, and billing operations enforce agency scope and role permissions.
 - Public listing reads are restricted to published inventory and omit owner/agency identifiers.
