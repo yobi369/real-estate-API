@@ -1,4 +1,4 @@
-import { createHmac,randomUUID,scrypt as scryptCallback,timingSafeEqual } from 'node:crypto';
+import { createHash,createHmac,randomBytes,randomUUID,scrypt as scryptCallback,timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
 import type { Request,Response,NextFunction } from 'express';
 import { z } from 'zod';
@@ -62,3 +62,44 @@ export async function loginUser(input:unknown):Promise<{principal:Principal,toke
 export async function authenticate(req:Request,res:Response,next:NextFunction):Promise<void>{const header=req.headers.authorization;const match=typeof header==='string'?/^Bearer ([A-Za-z0-9._~-]+)$/.exec(header):null;const claims=match?decodeToken(match[1]!):null;if(!claims){res.status(401).json({error:{code:'UNAUTHENTICATED',message:'A valid bearer token is required'}});return;}try{if(pool){const result=await pool.query<{id:string;email:string;role:Role}>("SELECT u.id,u.email,u.role FROM auth_sessions s JOIN users u ON u.id=s.user_id WHERE s.id=$1 AND s.user_id=$2 AND s.revoked_at IS NULL AND s.expires_at>now()",[claims.jti,claims.sub]);const user=result.rows[0];if(!user){res.status(401).json({error:{code:'UNAUTHENTICATED',message:'A valid bearer token is required'}});return;}req.principal={id:user.id,email:user.email,role:user.role};}else{const session=memorySessions.get(claims.jti);if(!session||session.principal.id!==claims.sub||session.revokedAt!==null||Date.parse(session.expiresAt)<=Date.now()){res.status(401).json({error:{code:'UNAUTHENTICATED',message:'A valid bearer token is required'}});return;}req.principal=session.principal;}req.authSessionId=claims.jti;next();}catch{res.status(503).json({error:{code:'AUTHENTICATION_STORE_UNAVAILABLE',message:'Session verification is temporarily unavailable'}});}}
 export function requireOwnerOrAdmin(ownerId:string,principal:Principal):boolean{return principal.role==='admin'||ownerId===principal.id;}
 export function resetMemoryUsersForTests():void{memoryUsers.clear();memorySessions.clear();}
+
+
+const passwordResetPassword=z.string().min(12).max(128).regex(/[a-z]/).regex(/[A-Z]/).regex(/[0-9]/);
+export async function createPasswordResetToken(emailInput:string):Promise<string|null>{
+ if(!pool)return null;
+ const email=emailInput.trim().toLowerCase();
+ const client=await pool.connect();
+ try{
+  await client.query('BEGIN');
+  const user=await client.query<{id:string}>('SELECT id FROM users WHERE email=$1',[email]);
+  if(!user.rows[0]){await client.query('COMMIT');return null;}
+  const token=randomBytes(32).toString('base64url');
+  const tokenHash=createHash('sha256').update(token).digest('hex');
+  await client.query('DELETE FROM password_reset_tokens WHERE user_id=$1 AND consumed_at IS NULL',[user.rows[0].id]);
+  await client.query('INSERT INTO password_reset_tokens(id,user_id,token_hash,expires_at) VALUES($1,$2,$3,now()+interval \'30 minutes\')',[randomUUID(),user.rows[0].id,tokenHash]);
+  await client.query('COMMIT');
+  return token;
+ }catch(error){await client.query('ROLLBACK');throw error;}finally{client.release();}
+}
+export async function completePasswordReset(tokenInput:string,passwordInput:string):Promise<boolean>{
+ if(!pool||tokenInput.length<32||tokenInput.length>128)return false;
+ const password=passwordResetPassword.safeParse(passwordInput);
+ if(!password.success)return false;
+ const tokenHash=createHash('sha256').update(tokenInput).digest('hex');
+ const passwordHash=await hashPassword(password.data);
+ const client=await pool.connect();
+ try{
+  await client.query('BEGIN');
+  const found=await client.query<{id:string;user_id:string}>(
+   'SELECT id,user_id FROM password_reset_tokens WHERE token_hash=$1 AND consumed_at IS NULL AND expires_at>now() FOR UPDATE',[tokenHash]
+  );
+  const reset=found.rows[0];
+  if(!reset){await client.query('ROLLBACK');return false;}
+  await client.query('UPDATE users SET password_hash=$1 WHERE id=$2',[passwordHash,reset.user_id]);
+  await client.query('UPDATE password_reset_tokens SET consumed_at=now() WHERE id=$1',[reset.id]);
+  await client.query('UPDATE auth_sessions SET revoked_at=now() WHERE user_id=$1 AND revoked_at IS NULL',[reset.user_id]);
+  await client.query('DELETE FROM password_reset_tokens WHERE user_id=$1 AND id<>$2',[reset.user_id,reset.id]);
+  await client.query('COMMIT');
+  return true;
+ }catch(error){await client.query('ROLLBACK');throw error;}finally{client.release();}
+}
