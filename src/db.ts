@@ -311,7 +311,27 @@ export async function migrate(targetPool: pg.Pool | null = migrationPool): Promi
       END
       $tenancy_backfill$;
 
-      CREATE TABLE IF NOT EXISTS password_reset_tokens (\n        id uuid PRIMARY KEY,\n        user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,\n        token_hash char(64) NOT NULL UNIQUE,\n        created_at timestamptz NOT NULL DEFAULT now(),\n        expires_at timestamptz NOT NULL,\n        consumed_at timestamptz,\n        CHECK (expires_at > created_at)\n      );\n      CREATE INDEX IF NOT EXISTS password_reset_tokens_user_idx ON password_reset_tokens (user_id,expires_at DESC);\n      DO $password_reset_runtime_grants$\n      BEGIN\n        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname='secure_properties_runtime') THEN\n          EXECUTE format('GRANT SELECT,INSERT,UPDATE,DELETE ON TABLE %I.password_reset_tokens TO secure_properties_runtime',current_schema());\n        END IF;\n        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname='secure_properties_staging_app') THEN\n          EXECUTE format('GRANT SELECT,INSERT,UPDATE,DELETE ON TABLE %I.password_reset_tokens TO secure_properties_staging_app',current_schema());\n        END IF;\n      END\n      $password_reset_runtime_grants$;\n      INSERT INTO schema_migrations(version) VALUES (1),(2),(3),(4),(5),(6),(7) ON CONFLICT (version) DO NOTHING;
+      CREATE TABLE IF NOT EXISTS password_reset_tokens (
+        id uuid PRIMARY KEY,
+        user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        token_hash char(64) NOT NULL UNIQUE,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        expires_at timestamptz NOT NULL,
+        consumed_at timestamptz,
+        CHECK (expires_at > created_at)
+      );
+      CREATE INDEX IF NOT EXISTS password_reset_tokens_user_idx ON password_reset_tokens (user_id,expires_at DESC);
+      DO $password_reset_runtime_grants$
+      BEGIN
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname='secure_properties_runtime') THEN
+          EXECUTE format('GRANT SELECT,INSERT,UPDATE,DELETE ON TABLE %I.password_reset_tokens TO secure_properties_runtime',current_schema());
+        END IF;
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname='secure_properties_staging_app') THEN
+          EXECUTE format('GRANT SELECT,INSERT,UPDATE,DELETE ON TABLE %I.password_reset_tokens TO secure_properties_staging_app',current_schema());
+        END IF;
+      END
+      $password_reset_runtime_grants$;
+      INSERT INTO schema_migrations(version) VALUES (1),(2),(3),(4),(5),(6),(7) ON CONFLICT (version) DO NOTHING;
     `);
     await client.query('COMMIT');
   } catch (error) {
