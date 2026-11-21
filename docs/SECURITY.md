@@ -20,7 +20,8 @@
 
 ## Known gaps before public launch
 
-- Implement email verification, secure password reset, account recovery, session inventory, per-session revocation, and account abuse/lockout workflows. Rotating JWT_SECRET invalidates existing tokens globally but is not a substitute for per-session revocation.
+- Email verification is not implemented yet. Password reset now uses random one-time tokens stored only as SHA-256 digests, a 30-minute expiry, single-use consumption, generic account-enumeration-resistant acknowledgements, and immediate revocation of all active sessions after a successful reset. Transactional delivery is provider-backed through Resend and remains disabled until a verified sender and secrets are configured.
+- Login adds a persistent per-account lockout after eight failed attempts for 15 minutes, independent of the per-IP rate limiter. Account identifiers are stored as keyed HMAC digests rather than raw email addresses in the lockout table. Password reset clears the account lockout.
 - Complete an independent authorization review and penetration test, and review audit-event coverage for every privileged operation.
 - Tune shared rate-limit thresholds using representative staging traffic and retain edge/WAF protection for volumetric attacks.
 - Automated invitation email delivery, resend, expiry notifications, and verified sender/domain configuration are not implemented; invitation delivery is currently manual.
