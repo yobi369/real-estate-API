@@ -16,12 +16,18 @@ const schema=z.object({
  MPESA_SHORTCODE:z.string().regex(/^\d{5,7}$/).optional(),
  MPESA_PASSKEY:z.string().min(1).optional(),
  MPESA_CALLBACK_BASE_URL:z.string().url().optional(),
- MPESA_CALLBACK_SECRET:z.string().regex(/^[A-Za-z0-9_-]{32,128}$/).optional()
+ MPESA_CALLBACK_SECRET:z.string().regex(/^[A-Za-z0-9_-]{32,128}$/).optional(),
+ EMAIL_PROVIDER:z.enum(['disabled','resend']).default('disabled'),
+ EMAIL_API_KEY:z.string().min(1).optional(),
+ EMAIL_FROM:z.string().email().optional(),
+ APP_BASE_URL:z.string().url().optional()
 });
 const parsed=schema.safeParse(process.env);
 if(!parsed.success)throw new Error('Invalid environment configuration: '+parsed.error.issues.map(i=>i.path.join('.')+': '+i.message).join('; '));
 if(parsed.data.NODE_ENV==='test'&&!parsed.data.ADMIN_BOOTSTRAP_TOKEN)parsed.data.ADMIN_BOOTSTRAP_TOKEN='test-only-bootstrap-token-never-use-in-production-123456';
 if(parsed.data.NODE_ENV==='production'&&(!parsed.data.DATABASE_URL||parsed.data.JWT_SECRET==='development-only-secret-change-before-production-123456'))throw new Error('Production requires DATABASE_URL and a unique JWT_SECRET');
+if(parsed.data.EMAIL_PROVIDER==='resend'&&(!parsed.data.EMAIL_API_KEY||!parsed.data.EMAIL_FROM||!parsed.data.APP_BASE_URL))throw new Error('Resend email requires EMAIL_API_KEY, EMAIL_FROM, and APP_BASE_URL');
+if(parsed.data.APP_BASE_URL&&!parsed.data.APP_BASE_URL.startsWith('https://')&&parsed.data.NODE_ENV==='production')throw new Error('APP_BASE_URL must use HTTPS in production');
 const mpesaFields=[parsed.data.MPESA_CONSUMER_KEY,parsed.data.MPESA_CONSUMER_SECRET,parsed.data.MPESA_SHORTCODE,parsed.data.MPESA_PASSKEY,parsed.data.MPESA_CALLBACK_BASE_URL,parsed.data.MPESA_CALLBACK_SECRET];
 const mpesaAny=mpesaFields.some(Boolean);
 const mpesaAll=mpesaFields.every(Boolean);
