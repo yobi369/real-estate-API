@@ -8,18 +8,20 @@
 - Agency subscription plans, payment ledger, plan-based listing and team-seat quotas, and billing APIs.
 - Safaricom Daraja PayBill STK Push foundation with idempotent attempts, protected callbacks, amount/receipt matching, status-query reconciliation, and end-of-period cancellation scheduling.
 - PostgreSQL-backed distributed fixed-window rate limits with keyed HMAC client-address digests and production fail-closed behaviour.
+- One-time password recovery using hashed 256-bit tokens, 30-minute expiry, enumeration-resistant request acknowledgements, session revocation, and a browser reset page.
+- Provider-backed Resend email transport (disabled until configured) and persistent per-account lockout after eight failed logins for 15 minutes.
 - Agency console, fictional read-only property demo, PostgreSQL-backed validated image uploads, and service discovery endpoint.
 - Encrypted PostgreSQL logical-backup and guarded restore scripts with CI integration tests against disposable PostgreSQL 16 databases.
 
 ### Security and operations
-- Added schema v6 `auth_sessions`; authenticated requests verify active sessions and resolve current user roles from PostgreSQL.
+- Added schema v6 `auth_sessions` and schema v7 identity recovery/lockout tables; authenticated requests verify active sessions and resolve current user roles from PostgreSQL.
 - Moved schema changes to an explicit migration command; application startup no longer runs schema DDL.
 - Added schema v5 readiness checks and restricted runtime database-role validation.
 - Expanded security, architecture, API, production-readiness, and PostgreSQL operations documentation.
 - Expanded CI to Node.js 22, 24, and 26 with dependency audits and PostgreSQL 16 operations checks.
 
 ### Not yet production-approved
-- Email verification, password reset/account recovery, refresh-token rotation, and account abuse workflows. Session inventory and individual revocation are now implemented.
+- Email verification and refresh-token rotation remain incomplete. Password reset and account lockout code are implemented; live delivery requires a verified sender and staging email-provider credentials.
 - Automated invitation email delivery.
 - Daraja sandbox/production provider acceptance, refunds, and Till/Buy Goods support.
 - Independent off-host backup/restore evidence, production infrastructure, monitoring, penetration testing, and customer acceptance.
