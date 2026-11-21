@@ -3,6 +3,7 @@
 ## Unreleased — 2026-11-21
 
 ### Added
+- Server-side authentication sessions bound to signed bearer tokens, with active-session inventory, per-session revocation, and immediate logout.
 - Multi-agency workspaces with owner/admin/agent/viewer roles, tenant-scoped inventory and enquiry access, member administration, hashed email-bound invitations, and recipient-accepted ownership transfer.
 - Agency subscription plans, payment ledger, plan-based listing and team-seat quotas, and billing APIs.
 - Safaricom Daraja PayBill STK Push foundation with idempotent attempts, protected callbacks, amount/receipt matching, status-query reconciliation, and end-of-period cancellation scheduling.
@@ -11,13 +12,14 @@
 - Encrypted PostgreSQL logical-backup and guarded restore scripts with CI integration tests against disposable PostgreSQL 16 databases.
 
 ### Security and operations
+- Added schema v6 `auth_sessions`; authenticated requests verify active sessions and resolve current user roles from PostgreSQL.
 - Moved schema changes to an explicit migration command; application startup no longer runs schema DDL.
 - Added schema v5 readiness checks and restricted runtime database-role validation.
 - Expanded security, architecture, API, production-readiness, and PostgreSQL operations documentation.
 - Expanded CI to Node.js 22, 24, and 26 with dependency audits and PostgreSQL 16 operations checks.
 
 ### Not yet production-approved
-- Email verification, password reset/account recovery, per-session revocation, and account abuse workflows.
+- Email verification, password reset/account recovery, refresh-token rotation, and account abuse workflows. Session inventory and individual revocation are now implemented.
 - Automated invitation email delivery.
 - Daraja sandbox/production provider acceptance, refunds, and Till/Buy Goods support.
 - Independent off-host backup/restore evidence, production infrastructure, monitoring, penetration testing, and customer acceptance.
