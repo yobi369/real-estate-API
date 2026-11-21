@@ -16,7 +16,7 @@ const schema=z.object({
  MPESA_SHORTCODE:z.string().regex(/^\d{5,7}$/).optional(),
  MPESA_PASSKEY:z.string().min(1).optional(),
  MPESA_CALLBACK_BASE_URL:z.string().url().optional(),
- MPESA_CALLBACK_SECRET:z.string().regex(/^[A-Za-z0-9_-]{32,128}$/).optional()
+ MPESA_CALLBACK_SECRET:z.string().regex(/^[A-Za-z0-9_-]{32,128}$/).optional(),\n EMAIL_API_URL:z.string().url().optional(),\n EMAIL_API_KEY:z.string().min(1).optional(),\n EMAIL_FROM:z.string().email().optional(),\n PUBLIC_APP_URL:z.string().url().optional()
 });
 const parsed=schema.safeParse(process.env);
 if(!parsed.success)throw new Error('Invalid environment configuration: '+parsed.error.issues.map(i=>i.path.join('.')+': '+i.message).join('; '));
@@ -32,3 +32,8 @@ if(mpesaAll){
  if(callbackUrl.pathname!=='/'||callbackUrl.search||callbackUrl.hash)throw new Error('M-Pesa callback base URL must be an origin without a path, query, or fragment');
 }
 export const config=Object.freeze(parsed.data);
+
+const emailFields=[parsed.data.EMAIL_API_URL,parsed.data.EMAIL_API_KEY,parsed.data.EMAIL_FROM,parsed.data.PUBLIC_APP_URL];
+if(emailFields.some(Boolean)&&!emailFields.every(Boolean))throw new Error('Password recovery email requires EMAIL_API_URL, EMAIL_API_KEY, EMAIL_FROM, and PUBLIC_APP_URL together');
+if(parsed.data.NODE_ENV==='production'&&parsed.data.EMAIL_API_URL&&!parsed.data.EMAIL_API_URL.startsWith('https://'))throw new Error('EMAIL_API_URL must use HTTPS in production');
+if(parsed.data.NODE_ENV==='production'&&parsed.data.PUBLIC_APP_URL&&!parsed.data.PUBLIC_APP_URL.startsWith('https://'))throw new Error('PUBLIC_APP_URL must use HTTPS in production');
