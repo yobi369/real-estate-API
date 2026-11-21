@@ -8,7 +8,9 @@ This checklist separates implemented controls from external or incomplete releas
 - [x] PostgreSQL repositories, constraints, indexes, multi-agency schema, audit events, subscription/payment tables, and shared rate-limit table.
 - [x] Development/test in-memory adapter; readiness returns 503 without PostgreSQL.
 - [x] Explicit transactional migration command; application startup does not run schema DDL.
-- [x] Scrypt password hashing, expiring HMAC-signed bearer tokens, persisted per-session records, session inventory, individual session revocation, and secret-protected one-time first-admin bootstrap.
+- [x] Scrypt password hashing, expiring HMAC-signed bearer tokens, persisted per-session records, session inventory, individual session revocation, one-time hashed password-reset tokens, session revocation on reset, and secret-protected one-time first-admin bootstrap.
+- [x] Persistent account-level lockout after eight failed login attempts for 15 minutes; account digests are keyed and do not store raw email addresses.
+- [x] Resend transactional email adapter and browser password reset flow. Live email delivery is disabled until a verified sender, provider key, and application URL are configured.
 - [x] Agency onboarding, active membership context resolution, agency-scoped listing writes/private inventory, publication lifecycle, scoped enquiry inbox, member administration, invitation lifecycle, and two-step ownership transfer.
 - [x] Public reads restricted to published listings; public responses omit owner and agency identifiers.
 - [x] Authenticated agency console for inventory, enquiries, and team operations; fictional buyer demo is read-only and isolated from customer listings.
@@ -28,7 +30,7 @@ This checklist separates implemented controls from external or incomplete releas
 
 - [ ] Provision dedicated production PostgreSQL and a least-privilege DB role.
 - [ ] Verify TLS settings for service and database connections in the target host.
-- [ ] Store unique JWT, database, deployment, and provider secrets in a managed secret store.
+- [ ] Store unique JWT, database, deployment, and provider secrets in a managed secret store, including verified transactional email credentials when enabled.
 - [ ] Configure provider-managed backups/retention and complete an independent encrypted off-host logical backup plus a restore drill.
 - [ ] Define controlled migration execution, rollback, and deployment ownership. The current migration foundation is transactional/idempotent but not yet decomposed into independently versioned migration files.
 - [ ] Confirm the production service plan, availability characteristics, health checks, monitoring, alerting, and capacity are suitable for the agreed customer SLA. The current free staging instance can hibernate and is not production-grade.
@@ -36,7 +38,7 @@ This checklist separates implemented controls from external or incomplete releas
 
 ### Identity and application security
 
-- [ ] Implement email verification, secure password reset/account recovery, refresh-token rotation, and account abuse/lockout workflows. Per-session inventory and revocation are implemented.
+- [ ] Implement email verification and refresh-token rotation. Password reset and account lockout are implemented, but live email delivery and staging end-to-end verification remain pending.
 - [ ] Complete independent authorization review, penetration testing, and audit-event coverage review.
 - [ ] Complete dependency, secret, static-analysis, and runtime review; resolve material findings.
 - [ ] Validate request timeouts, payload limits, and failure handling in the deployed environment.
