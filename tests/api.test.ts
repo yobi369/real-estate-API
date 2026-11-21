@@ -2,7 +2,7 @@ import {beforeEach,describe,expect,it} from 'vitest';
 import request from 'supertest';
 import {randomUUID} from 'node:crypto';
 import {app,propertyRepository} from '../src/app.js';
-import {resetMemoryUsersForTests,createPasswordResetToken,completePasswordReset} from '../src/auth.js';
+import {resetMemoryUsersForTests,createPasswordResetToken,completePasswordReset,createEmailVerificationToken,completeEmailVerification} from '../src/auth.js';
 import {config} from '../src/config.js';
 import {migrate,pool} from '../src/db.js';
 import {PropertyRepository} from '../src/repositories/property-repository.js';
@@ -17,7 +17,7 @@ async function agencyId(token:string,withSubscription=true){const r=await reques
 async function publishListing(token:string,id:string,status='published'){return request(app).patch(`/api/v1/properties/${id}/publication`).set('Authorization',`Bearer ${token}`).set('X-Agency-ID',await agencyId(token)).send({status});}
 beforeEach(async()=>{await migrate();await propertyRepository.clear();resetMemoryUsersForTests();if(pool){await pool.query('TRUNCATE TABLE subscription_payments,agency_subscriptions CASCADE');await pool.query("DELETE FROM subscription_plans WHERE code='test-monthly'");await pool.query('TRUNCATE TABLE properties, users CASCADE');}});
 describe('buyer demo',()=>{it('serves the interactive demo page and static assets',async()=>{expect((await request(app).get('/demo/')).status).toBe(200);expect((await request(app).get('/demo/app.js')).status).toBe(200);});it('serves the authenticated agency console shell and assets',async()=>{expect((await request(app).get('/console/')).status).toBe(200);expect((await request(app).get('/console/app.js')).status).toBe(200);expect((await request(app).get('/console/style.css')).status).toBe(200);});it('returns isolated fictional sample listings and filters them',async()=>{const all=await request(app).get('/demo/properties');expect(all.status).toBe(200);expect(all.body.data.total).toBeGreaterThan(0);expect(all.body.data.notice).toContain('Fictional sample data');const machakos=await request(app).get('/demo/properties?city=Machakos');expect(machakos.body.data.total).toBe(1);expect(machakos.body.data.items[0].city).toBe('Machakos');const land=await request(app).get('/demo/properties?propertyType=land');expect(land.body.data.items.every((p:{propertyType:string})=>p.propertyType==='land')).toBe(true);});it('does not write demo records into the operational property repository',async()=>{const before=await propertyRepository.list({page:1,limit:100});await request(app).get('/demo/properties');const after=await propertyRepository.list({page:1,limit:100});expect(after.total).toBe(before.total);});});
-describe('health/docs',()=>{it('provides API discovery links at the service root',async()=>{const response=await request(app).get('/');expect(response.status).toBe(200);expect(response.body.documentation).toBe('/docs/');expect(response.body.health.ready).toBe('/health/ready');});it('reports liveness',async()=>{expect((await request(app).get('/health/live')).body.status).toBe('ok');});it('reports readiness only after the required tenancy and distributed rate-limit schema is present',async()=>{const response=await request(app).get('/health/ready');expect(response.status).toBe(pool?200:503);if(pool){expect(response.body.schema).toBe('current');const schema=await pool.query<{ready:boolean}>(`SELECT to_regclass('public.api_rate_limit_buckets') IS NOT NULL AND to_regclass('public.auth_sessions') IS NOT NULL AND to_regclass('public.password_reset_tokens') IS NOT NULL AND EXISTS(SELECT 1 FROM schema_migrations WHERE version=7) AS ready`);expect(schema.rows[0]?.ready).toBe(true);}});it('serves OpenAPI and Swagger UI',async()=>{expect((await request(app).get('/openapi.json')).status).toBe(200);expect((await request(app).get('/docs/')).status).toBe(200);});});
+describe('health/docs',()=>{it('provides API discovery links at the service root',async()=>{const response=await request(app).get('/');expect(response.status).toBe(200);expect(response.body.documentation).toBe('/docs/');expect(response.body.health.ready).toBe('/health/ready');});it('reports liveness',async()=>{expect((await request(app).get('/health/live')).body.status).toBe('ok');});it('reports readiness only after the required tenancy and distributed rate-limit schema is present',async()=>{const response=await request(app).get('/health/ready');expect(response.status).toBe(pool?200:503);if(pool){expect(response.body.schema).toBe('current');const schema=await pool.query<{ready:boolean}>(`SELECT to_regclass('public.api_rate_limit_buckets') IS NOT NULL AND to_regclass('public.auth_sessions') IS NOT NULL AND to_regclass('public.auth_email_tokens') IS NOT NULL AND to_regclass('public.auth_login_attempts') IS NOT NULL AND EXISTS(SELECT 1 FROM schema_migrations WHERE version=8) AS ready`);expect(schema.rows[0]?.ready).toBe(true);}});it('serves OpenAPI and Swagger UI',async()=>{expect((await request(app).get('/openapi.json')).status).toBe(200);expect((await request(app).get('/docs/')).status).toBe(200);});});
 describe('authentication and authorization',()=>{
  it('returns a configuration error rather than exposing reset details when email delivery is unavailable',async()=>{
   const response=await request(app).post('/api/v1/auth/password-reset/request').send({email:'nobody@example.com'});
@@ -30,7 +30,7 @@ describe('authentication and authorization',()=>{
   const token=await register('password-reset@example.com');
   const reset=await createPasswordResetToken('password-reset@example.com');
   expect(reset).toBeTruthy();
-  const stored=await pool.query<{token_hash:string;consumed_at:Date|null}>('SELECT token_hash,consumed_at FROM password_reset_tokens');
+  const stored=await pool.query<{token_hash:string;consumed_at:Date|null}>('SELECT token_hash,consumed_at FROM auth_email_tokens WHERE purpose=\'password_reset\'');
   expect(stored.rows).toHaveLength(1);
   expect(stored.rows[0]!.token_hash).not.toBe(reset);
   expect(await completePasswordReset(reset!,'NewStrongPassword456')).toBe(true);
@@ -39,6 +39,28 @@ describe('authentication and authorization',()=>{
   const login=await request(app).post('/api/v1/auth/login').send({email:'password-reset@example.com',password:'NewStrongPassword456'});
   expect(login.status).toBe(200);
   expect((await pool.query('SELECT id FROM auth_sessions WHERE user_id=(SELECT id FROM users WHERE email=$1) AND revoked_at IS NULL',['password-reset@example.com'])).rows).toHaveLength(1);
+ });
+
+ it('consumes email verification tokens once and stores only a digest',async()=>{
+  if(!pool)return;
+  const token=await register('verify-token@example.com');
+  const verification=await createEmailVerificationToken((await pool.query<{id:string}>('SELECT id FROM users WHERE email=$1',['verify-token@example.com'])).rows[0]!.id);
+  const stored=await pool.query<{token_hash:string}>("SELECT token_hash FROM auth_email_tokens WHERE purpose='email_verification'");
+  expect(stored.rows[0]?.token_hash).not.toBe(verification);
+  expect(await completeEmailVerification(verification)).toBe(true);
+  expect(await completeEmailVerification(verification)).toBe(false);
+  expect(token).toBeTruthy();
+ });
+ it('locks an account after five consecutive invalid password attempts',async()=>{
+  const email='account-lockout@example.com';
+  await register(email);
+  for(let i=0;i<5;i++){
+   const response=await request(app).post('/api/v1/auth/login').set('X-Forwarded-For',`203.0.113.${i+1}`).send({email,password:'IncorrectPassword123'});
+   expect([401,429]).toContain(response.status);
+  }
+  const blocked=await request(app).post('/api/v1/auth/login').set('X-Forwarded-For','203.0.113.99').send({email,password:'StrongPassword123'});
+  expect(blocked.status).toBe(429);
+  expect(blocked.body.error.code).toBe('ACCOUNT_TEMPORARILY_LOCKED');
  });
  it('rejects weak new passwords and unknown reset tokens',async()=>{
   expect(await completePasswordReset('x'.repeat(40),'weak')).toBe(false);
