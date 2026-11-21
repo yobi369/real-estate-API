@@ -53,6 +53,9 @@ export async function migrate(targetPool: pg.Pool | null = migrationPool): Promi
         IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname='secure_properties_runtime') THEN
           EXECUTE format('GRANT SELECT,INSERT,UPDATE,DELETE ON TABLE %I.auth_sessions TO secure_properties_runtime',current_schema());
         END IF;
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname='secure_properties_staging_app') THEN
+          EXECUTE format('GRANT SELECT,INSERT,UPDATE,DELETE ON TABLE %I.auth_sessions TO secure_properties_staging_app',current_schema());
+        END IF;
       END
       $auth_session_runtime_grants$;
       CREATE TABLE IF NOT EXISTS properties (
@@ -255,6 +258,9 @@ export async function migrate(targetPool: pg.Pool | null = migrationPool): Promi
       BEGIN
         IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname='secure_properties_runtime') THEN
           EXECUTE format('GRANT SELECT,INSERT,UPDATE,DELETE ON TABLE %I.api_rate_limit_buckets TO secure_properties_runtime',current_schema());
+        END IF;
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname='secure_properties_staging_app') THEN
+          EXECUTE format('GRANT SELECT,INSERT,UPDATE,DELETE ON TABLE %I.api_rate_limit_buckets TO secure_properties_staging_app',current_schema());
         END IF;
       END
       $rate_limit_runtime_grants$;
