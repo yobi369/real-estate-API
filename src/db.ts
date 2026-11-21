@@ -38,6 +38,56 @@ export async function migrate(targetPool: pg.Pool | null = migrationPool): Promi
         role text NOT NULL DEFAULT 'user' CHECK (role IN ('user','admin')),
         created_at timestamptz NOT NULL DEFAULT now()
       );
+      CREATE TABLE IF NOT EXISTS auth_sessions (
+        id uuid PRIMARY KEY,
+        user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        expires_at timestamptz NOT NULL,
+        revoked_at timestamptz,
+        CHECK (expires_at > created_at)
+      );
+      CREATE INDEX IF NOT EXISTS auth_sessions_user_active_idx
+        ON auth_sessions (user_id,expires_at DESC) WHERE revoked_at IS NULL;
+      CREATE TABLE IF NOT EXISTS auth_email_tokens (
+        token_hash text PRIMARY KEY,
+        user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        purpose text NOT NULL CHECK (purpose IN ('password_reset','email_verification')),
+        expires_at timestamptz NOT NULL,
+        consumed_at timestamptz,
+        created_at timestamptz NOT NULL DEFAULT now()
+      );
+      CREATE INDEX IF NOT EXISTS auth_email_tokens_user_purpose_idx
+        ON auth_email_tokens (user_id,purpose,expires_at DESC) WHERE consumed_at IS NULL;
+      CREATE TABLE IF NOT EXISTS auth_login_attempts (
+        email_digest text PRIMARY KEY,
+        failed_attempts integer NOT NULL CHECK (failed_attempts >= 0),
+        locked_until timestamptz,
+        updated_at timestamptz NOT NULL DEFAULT now()
+      );
+      CREATE INDEX IF NOT EXISTS auth_login_attempts_locked_idx
+        ON auth_login_attempts (locked_until) WHERE locked_until IS NOT NULL;
+      DO $identity_runtime_grants$
+      BEGIN
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname='secure_properties_runtime') THEN
+          EXECUTE format('GRANT SELECT,INSERT,UPDATE,DELETE ON TABLE %I.auth_email_tokens TO secure_properties_runtime',current_schema());
+          EXECUTE format('GRANT SELECT,INSERT,UPDATE,DELETE ON TABLE %I.auth_login_attempts TO secure_properties_runtime',current_schema());
+        END IF;
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname='secure_properties_staging_app') THEN
+          EXECUTE format('GRANT SELECT,INSERT,UPDATE,DELETE ON TABLE %I.auth_email_tokens TO secure_properties_staging_app',current_schema());
+          EXECUTE format('GRANT SELECT,INSERT,UPDATE,DELETE ON TABLE %I.auth_login_attempts TO secure_properties_staging_app',current_schema());
+        END IF;
+      END
+      $identity_runtime_grants$;
+      DO $auth_session_runtime_grants$
+      BEGIN
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname='secure_properties_runtime') THEN
+          EXECUTE format('GRANT SELECT,INSERT,UPDATE,DELETE ON TABLE %I.auth_sessions TO secure_properties_runtime',current_schema());
+        END IF;
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname='secure_properties_staging_app') THEN
+          EXECUTE format('GRANT SELECT,INSERT,UPDATE,DELETE ON TABLE %I.auth_sessions TO secure_properties_staging_app',current_schema());
+        END IF;
+      END
+      $auth_session_runtime_grants$;
       CREATE TABLE IF NOT EXISTS properties (
         id uuid PRIMARY KEY,
         owner_id uuid NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
@@ -228,6 +278,22 @@ export async function migrate(targetPool: pg.Pool | null = migrationPool): Promi
       );
       CREATE INDEX IF NOT EXISTS subscription_payments_agency_created_idx ON subscription_payments (agency_id,created_at DESC);
       CREATE INDEX IF NOT EXISTS subscription_payments_status_created_idx ON subscription_payments (status,created_at DESC);
+      CREATE TABLE IF NOT EXISTS api_rate_limit_buckets (
+        bucket_key text PRIMARY KEY,
+        request_count integer NOT NULL CHECK (request_count > 0),
+        reset_at timestamptz NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS api_rate_limit_buckets_reset_idx ON api_rate_limit_buckets (reset_at);
+      DO $rate_limit_runtime_grants$
+      BEGIN
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname='secure_properties_runtime') THEN
+          EXECUTE format('GRANT SELECT,INSERT,UPDATE,DELETE ON TABLE %I.api_rate_limit_buckets TO secure_properties_runtime',current_schema());
+        END IF;
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname='secure_properties_staging_app') THEN
+          EXECUTE format('GRANT SELECT,INSERT,UPDATE,DELETE ON TABLE %I.api_rate_limit_buckets TO secure_properties_staging_app',current_schema());
+        END IF;
+      END
+      $rate_limit_runtime_grants$;
       CREATE UNIQUE INDEX IF NOT EXISTS subscription_payments_one_pending_per_agency_idx ON subscription_payments (agency_id) WHERE status IN ('initiated','pending');
       ALTER TABLE properties ADD COLUMN IF NOT EXISTS publication_status text NOT NULL DEFAULT 'published' CHECK (publication_status IN ('draft','published','archived'));
       CREATE INDEX IF NOT EXISTS properties_publication_status_created_idx ON properties (publication_status,created_at DESC);
@@ -275,7 +341,7 @@ export async function migrate(targetPool: pg.Pool | null = migrationPool): Promi
       END
       $tenancy_backfill$;
 
-      INSERT INTO schema_migrations(version) VALUES (1),(2),(3),(4) ON CONFLICT (version) DO NOTHING;
+      INSERT INTO schema_migrations(version) VALUES (1),(2),(3),(4),(5),(6),(7) ON CONFLICT (version) DO NOTHING;
     `);
     await client.query('COMMIT');
   } catch (error) {

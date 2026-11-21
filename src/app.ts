@@ -19,7 +19,8 @@ import { initiateStkPush,isMpesaConfigured,normalizeKenyanPhone,parseStkCallback
 import { z } from 'zod';
 import { demoProperties } from './demo-data.js';
 import { pool } from './db.js';
-import { authenticate,bootstrapAdmin,loginUser,registerUser } from './auth.js';
+import { authenticate,bootstrapAdmin,completePasswordReset,loginUser,registerUser,requestPasswordReset,listAuthSessions,revokeAuthSession } from './auth.js';
+import { isEmailDeliveryConfigured } from './services/email.js';
 import { createRateLimiter } from './rate-limit.js';
 const require = createRequire(import.meta.url);
 type PinoHttpOptions = { level: string; genReqId: (req: express.Request, res: express.Response) => string; redact: string[] };
@@ -37,6 +38,7 @@ const invitationAcceptSchema=z.object({token:z.string().min(32).max(128)}).stric
 const ownershipTransferCreateSchema=z.object({targetUserId:z.string().uuid()}).strict();
 const agencyCreateSchema=z.object({name:z.string().trim().min(2).max(160)}).strict();
 const stkPushSchema=z.object({planCode:z.string().trim().min(2).max(60),phoneNumber:z.string().trim().min(8).max(20)}).strict();
+const passwordResetRequestSchema=z.object({email:z.string().trim().email().max(254).transform(v=>v.toLowerCase())}).strict();
 const resolveActiveAgency=async(req:express.Request,res:express.Response):Promise<{id:string;role:'owner'|'admin'|'agent'|'viewer'}|null>=>{
  const agencyId=req.header('x-agency-id');
  if(!agencyId||!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(agencyId)){
@@ -52,35 +54,38 @@ const resolveActiveAgency=async(req:express.Request,res:express.Response):Promis
  }
 };
 const toPublicProperty=(property:StoredProperty)=>{const {ownerId,agencyId,...publicFields}=property;void ownerId;void agencyId;return publicFields;};
-const authBootstrapRateLimit=createRateLimiter({windowMs:15*60*1000,max:5});
-const authRegisterRateLimit=createRateLimiter({windowMs:15*60*1000,max:10});
-const authLoginRateLimit=createRateLimiter({windowMs:15*60*1000,max:10});
-const billingCheckoutRateLimit=createRateLimiter({windowMs:15*60*1000,max:5});
-const publicSearchRateLimit=createRateLimiter({windowMs:60*1000,max:120});
-const inquiryRateLimits=new Map<string,{count:number;resetAt:number}>();
-const inquiryRateLimit:express.RequestHandler=(req,res,next)=>{
- const now=Date.now();const key=req.ip||req.socket.remoteAddress||'unknown';
- let entry=inquiryRateLimits.get(key);
- if(!entry||entry.resetAt<=now){entry={count:0,resetAt:now+15*60*1000};}
- if(entry.count>=10){res.setHeader('Retry-After',String(Math.max(1,Math.ceil((entry.resetAt-now)/1000))));return res.status(429).json({error:{code:'RATE_LIMITED',message:'Too many enquiries. Please try again later.'}});}
- entry.count+=1;inquiryRateLimits.set(key,entry);
- if(inquiryRateLimits.size>5000){for(const [ip,value] of inquiryRateLimits){if(value.resetAt<=now)inquiryRateLimits.delete(ip);}}
- return next();
-};
+const authBootstrapRateLimit=createRateLimiter({namespace:'auth-bootstrap',windowMs:15*60*1000,max:5});
+const authRegisterRateLimit=createRateLimiter({namespace:'auth-register',windowMs:15*60*1000,max:10});
+const authLoginRateLimit=createRateLimiter({namespace:'auth-login',windowMs:15*60*1000,max:10});
+const passwordResetRequestRateLimit=createRateLimiter({namespace:'password-reset-request',windowMs:15*60*1000,max:5});
+const passwordResetCompleteRateLimit=createRateLimiter({namespace:'password-reset-complete',windowMs:15*60*1000,max:10});
+const billingCheckoutRateLimit=createRateLimiter({namespace:'billing-checkout',windowMs:15*60*1000,max:5});
+const publicSearchRateLimit=createRateLimiter({namespace:'public-search',windowMs:60*1000,max:120});
+const inquiryRateLimit=createRateLimiter({namespace:'public-inquiry',windowMs:15*60*1000,max:10});
 
-app.disable('x-powered-by');app.set('trust proxy',1);app.use(helmet());
+app.disable('x-powered-by');
+// Render staging logs show the socket is loopback and X-Forwarded-For is
+// client, Cloudflare, Render proxy. Trust only those three nearest hops so
+// a client-supplied prefix remains untrusted when Express resolves req.ip.
+app.set('trust proxy',3);
+app.use(helmet());
 app.use(cors({origin:config.CORS_ORIGIN.split(',').map(v=>v.trim()),credentials:false}));
 app.use(express.json({limit:'1mb',strict:true}));
 app.use(pinoHttp({level:config.LOG_LEVEL,genReqId:(req,res)=>{const h=req.headers['x-request-id'];const id=typeof h==='string'&&/^[a-zA-Z0-9._-]{1,100}$/.test(h)?h:randomUUID();res.setHeader('x-request-id',id);return id;},redact:['req.headers.authorization','req.headers.cookie','req.headers.x-bootstrap-token','req.url']}));
 const spec={
- openapi:'3.1.0',info:{title:'Real Estate API',version:'1.3.0',description:'Property, short-stay and land inventory with authenticated listing management and persisted customer enquiries.'},servers:[{url:'/'}],
+ openapi:'3.1.0',info:{title:'Real Estate API',version:'1.5.0',description:'Property, short-stay and land inventory with authenticated listing management and persisted customer enquiries.'},servers:[{url:'/'}],
  tags:[{name:'Properties',description:'Search and manage property listings.'},{name:'Inquiries',description:'Receive and review customer enquiries.'},{name:'Agencies',description:'Create and discover agency workspaces.'},{name:'Authentication',description:'Register and authenticate listing operators.'},{name:'Health',description:'Service health and readiness.'},{name:'Billing',description:'Agency subscription plans and payment history.'}],
  paths:{
   '/health/live':{get:{tags:['Health'],summary:'Check process liveness',responses:{'200':{description:'Process is alive'}}}},
   '/health/ready':{get:{tags:['Health'],summary:'Check database readiness',responses:{'200':{description:'Database is ready'},'503':{description:'Database unavailable or not configured'}}}},
   '/api/v1/admin/bootstrap':{post:{tags:['Authentication'],summary:'Create the first administrator once using a bootstrap secret',parameters:[{name:'x-bootstrap-token',in:'header',required:true,schema:{type:'string'}}],requestBody:{required:true,content:{'application/json':{schema:{type:'object',required:['email','password'],properties:{email:{type:'string',format:'email'},password:{type:'string',minLength:12}}}}}},responses:{'201':{description:'Administrator created'},'404':{description:'Bootstrap unavailable'},'409':{description:'An administrator already exists'}}}},
+  '/api/v1/auth/password-reset/request':{post:{tags:['Authentication'],summary:'Request a one-time password reset email',requestBody:{required:true,content:{'application/json':{schema:{type:'object',additionalProperties:false,required:['email'],properties:{email:{type:'string',format:'email'}}}}}},responses:{'202':{description:'Generic response to prevent account enumeration'},'400':{description:'Invalid email'},'503':{description:'Email delivery unavailable'}}}},
+  '/api/v1/auth/password-reset/complete':{post:{tags:['Authentication'],summary:'Complete a password reset with a one-time token',requestBody:{required:true,content:{'application/json':{schema:{type:'object',additionalProperties:false,required:['token','password'],properties:{token:{type:'string'},password:{type:'string',minLength:12,maxLength:128}}}}}},responses:{'204':{description:'Password updated and all sessions revoked'},'400':{description:'Invalid or expired token'}}}},
   '/api/v1/auth/register':{post:{tags:['Authentication'],summary:'Register a listing operator',requestBody:{required:true,content:{'application/json':{schema:{type:'object',required:['email','password'],properties:{email:{type:'string',format:'email'},password:{type:'string',minLength:12}}}}}},responses:{'201':{description:'Account created'},'400':{description:'Invalid registration input'},'409':{description:'Email already registered'}}}},
   '/api/v1/auth/login':{post:{tags:['Authentication'],summary:'Authenticate a listing operator',requestBody:{required:true,content:{'application/json':{schema:{type:'object',required:['email','password'],properties:{email:{type:'string',format:'email'},password:{type:'string'}}}}}},responses:{'200':{description:'Authenticated'},'401':{description:'Invalid credentials'}}}},
+  '/api/v1/auth/logout':{post:{tags:['Authentication'],summary:'Revoke the current bearer session',security:[{bearerAuth:[]}],responses:{'204':{description:'Session revoked'},'401':{description:'Authentication required'},'503':{description:'Session store unavailable'}}}},
+  '/api/v1/auth/sessions':{get:{tags:['Authentication'],summary:'List active sessions for the authenticated account',security:[{bearerAuth:[]}],responses:{'200':{description:'Active sessions; identifies the current session'},'401':{description:'Authentication required'}}}},
+  '/api/v1/auth/sessions/{sessionId}':{delete:{tags:['Authentication'],summary:'Revoke one of the authenticated account sessions',security:[{bearerAuth:[]}],parameters:[{name:'sessionId',in:'path',required:true,schema:{type:'string',format:'uuid'}}],responses:{'204':{description:'Session revoked'},'404':{description:'Session not found'},'401':{description:'Authentication required'}}}},
   '/api/v1/agencies':{post:{tags:['Agencies'],summary:'Create an agency workspace and become its owner',security:[{bearerAuth:[]}],requestBody:{required:true,content:{'application/json':{schema:{type:'object',additionalProperties:false,required:['name'],properties:{name:{type:'string',minLength:2,maxLength:160}}}}}},responses:{'201':{description:'Agency created'},'400':{description:'Invalid agency name'},'401':{description:'Authentication required'},'503':{description:'Persistent storage required'}}}},
   '/api/v1/billing/mpesa/stk-push':{post:{tags:['Billing'],summary:'Start an idempotent M-Pesa subscription checkout',security:[{bearerAuth:[]}],parameters:[{name:'X-Agency-ID',in:'header',required:true,schema:{type:'string',format:'uuid'}},{name:'Idempotency-Key',in:'header',required:true,schema:{type:'string',minLength:16,maxLength:128}}],responses:{'202':{description:'STK prompt accepted; payment remains pending'},'403':{description:'Agency owner or admin permission required'},'503':{description:'Daraja is not configured'}}}},
   '/api/v1/webhooks/mpesa/{secret}':{post:{tags:['Billing'],summary:'Receive Daraja STK callback using the configured unguessable callback path',parameters:[{name:'secret',in:'path',required:true,schema:{type:'string'}}],responses:{'200':{description:'Callback accepted'},'404':{description:'Callback route not found'}}}},
@@ -107,13 +112,33 @@ const spec={
   InquiryInput:{type:'object',additionalProperties:false,required:['requestType','name','email','phone','message'],properties:{requestType:{type:'string',enum:['general','booking','viewing','site_visit']},name:{type:'string'},email:{type:'string',format:'email'},phone:{type:'string'},message:{type:'string'},service:{type:'string'},listingId:{type:'string',format:'uuid'},listingTitle:{type:'string'},listingCategory:{type:'string',enum:['property','airbnb','land']},checkIn:{type:'string',format:'date'},checkOut:{type:'string',format:'date'},guests:{type:'integer'},visitDate:{type:'string',format:'date'},pickupPoint:{type:'string'},agencySlug:{type:'string',description:'Active agency slug for general enquiries without a listing ID'}}}
  }}
 };
+app.get('/',(_req,res)=>res.json({service:'real-estate-api',apiVersion:'1.5.0',status:'ok',documentation:'/docs/',openapi:'/openapi.json',health:{live:'/health/live',ready:'/health/ready'}}));
 app.get('/health/live',(_req,res)=>res.json({status:'ok',service:'real-estate-api'}));
-app.get('/health/ready',async(_req,res)=>{if(!pool)return res.status(503).json({status:'degraded',persistence:'in-memory-development-adapter'});try{const result=await pool.query<{ready:boolean}>(`SELECT to_regclass('public.users') IS NOT NULL AND to_regclass('public.properties') IS NOT NULL AND to_regclass('public.inquiries') IS NOT NULL AND to_regclass('public.agencies') IS NOT NULL AND to_regclass('public.agency_memberships') IS NOT NULL AND to_regclass('public.agency_invitations') IS NOT NULL AND to_regclass('public.agency_ownership_transfers') IS NOT NULL AND to_regclass('public.audit_events') IS NOT NULL AND to_regclass('public.subscription_plans') IS NOT NULL AND to_regclass('public.agency_subscriptions') IS NOT NULL AND to_regclass('public.subscription_payments') IS NOT NULL AND EXISTS (SELECT 1 FROM schema_migrations WHERE version=4) AS ready`);if(!result.rows[0]?.ready)return res.status(503).json({status:'degraded',persistence:'postgresql',schema:'pending'});return res.status(200).json({status:'ready',persistence:'postgresql',schema:'current'});}catch{return res.status(503).json({status:'degraded',persistence:'postgresql',schema:'unavailable'});}});
+app.get('/health/ready',async(_req,res)=>{if(!pool)return res.status(503).json({status:'degraded',persistence:'in-memory-development-adapter'});try{const result=await pool.query<{ready:boolean}>(`SELECT to_regclass('public.users') IS NOT NULL AND to_regclass('public.properties') IS NOT NULL AND to_regclass('public.inquiries') IS NOT NULL AND to_regclass('public.agencies') IS NOT NULL AND to_regclass('public.agency_memberships') IS NOT NULL AND to_regclass('public.agency_invitations') IS NOT NULL AND to_regclass('public.agency_ownership_transfers') IS NOT NULL AND to_regclass('public.audit_events') IS NOT NULL AND to_regclass('public.subscription_plans') IS NOT NULL AND to_regclass('public.agency_subscriptions') IS NOT NULL AND to_regclass('public.subscription_payments') IS NOT NULL AND to_regclass('public.api_rate_limit_buckets') IS NOT NULL AND to_regclass('public.auth_sessions') IS NOT NULL AND to_regclass('public.auth_email_tokens') IS NOT NULL AND to_regclass('public.auth_login_attempts') IS NOT NULL AND EXISTS (SELECT 1 FROM schema_migrations WHERE version=7) AS ready`);if(!result.rows[0]?.ready)return res.status(503).json({status:'degraded',persistence:'postgresql',schema:'pending'});return res.status(200).json({status:'ready',persistence:'postgresql',schema:'current'});}catch{return res.status(503).json({status:'degraded',persistence:'postgresql',schema:'unavailable'});}});
 app.get('/demo/properties',publicSearchRateLimit,(req,res)=>{const parsed=propertyQuerySchema.safeParse(req.query);if(!parsed.success)return res.status(400).json({error:{code:'VALIDATION_ERROR',message:'Query parameters are invalid'}});const q=parsed.data;const needle=q.search?.toLocaleLowerCase();const matches=demoProperties.filter(p=>(!q.city||p.city.toLocaleLowerCase()===q.city.toLocaleLowerCase())&&(!q.propertyType||p.propertyType===q.propertyType)&&(!q.transactionType||p.transactionType===q.transactionType)&&(q.minPrice===undefined||p.price>=q.minPrice)&&(q.maxPrice===undefined||p.price<=q.maxPrice)&&(!needle||`${p.title} ${p.description} ${p.city}`.toLocaleLowerCase().includes(needle))).sort((a,b)=>b.createdAt.localeCompare(a.createdAt));const start=(q.page-1)*q.limit;return res.json({data:{items:matches.slice(start,start+q.limit),total:matches.length,page:q.page,limit:q.limit,notice:'Fictional sample data for demonstration only. Not live property listings.'}});});
 app.get('/openapi.json',(_req,res)=>res.json(spec));app.use('/docs',swaggerUi.serve,swaggerUi.setup(spec));
 app.post('/api/v1/admin/bootstrap',authBootstrapRateLimit,async(req,res)=>{const result=await bootstrapAdmin(req.body,req.header('x-bootstrap-token')??'');if('error'in result){const status=result.error==='DISABLED'?404:result.error==='EXISTS'?409:400;return res.status(status).json({error:{code:result.error,message:result.error==='DISABLED'?'Bootstrap is unavailable':result.error==='EXISTS'?'An administrator already exists':'Administrator details are invalid'}});}return res.status(201).json({data:{user:result.principal,token:result.token,tokenType:'Bearer',expiresIn:config.JWT_TTL_SECONDS}});});
 app.post('/api/v1/auth/register',authRegisterRateLimit,async(req,res)=>{const result=await registerUser(req.body);if('error'in result)return res.status(result.error==='EXISTS'?409:400).json({error:{code:result.error==='EXISTS'?'EMAIL_EXISTS':'VALIDATION_ERROR',message:result.error==='EXISTS'?'An account with this email already exists':'Email or password does not meet requirements'}});return res.status(201).json({data:{user:result.principal,token:result.token,tokenType:'Bearer',expiresIn:config.JWT_TTL_SECONDS}});});
 app.post('/api/v1/auth/login',authLoginRateLimit,async(req,res)=>{const result=await loginUser(req.body);if(!result)return res.status(401).json({error:{code:'INVALID_CREDENTIALS',message:'Email or password is incorrect'}});return res.json({data:{user:result.principal,token:result.token,tokenType:'Bearer',expiresIn:config.JWT_TTL_SECONDS}});});
+app.post('/api/v1/auth/password-reset/request',passwordResetRequestRateLimit,(req,res)=>{
+ if(!isEmailDeliveryConfigured())return res.status(503).json({error:{code:'EMAIL_DELIVERY_UNAVAILABLE',message:'Password recovery email delivery is not configured'}});
+ const parsed=passwordResetRequestSchema.safeParse(req.body);
+ if(!parsed.success)return res.status(400).json({error:{code:'VALIDATION_ERROR',message:'A valid email address is required'}});
+ // Return immediately for both existing and unknown accounts. Delivery runs
+ // asynchronously so response timing does not disclose account existence.
+ void requestPasswordReset(parsed.data).catch(error=>{
+  const category=error instanceof Error&&error.message==='EMAIL_DELIVERY_FAILED'?'provider':'internal';
+  console.error('password_reset_request_failed',category);
+ });
+ return res.status(202).json({data:{message:'If an account exists for that email, password reset instructions will be sent.'}});
+});
+app.post('/api/v1/auth/password-reset/complete',passwordResetCompleteRateLimit,async(req,res)=>{
+ try{const completed=await completePasswordReset(req.body);return completed?res.status(204).end():res.status(400).json({error:{code:'RESET_TOKEN_INVALID',message:'The reset link is invalid, expired, or already used'}});}
+ catch{return res.status(503).json({error:{code:'PASSWORD_RESET_UNAVAILABLE',message:'Password reset is temporarily unavailable'}});}
+});
+app.get('/api/v1/auth/sessions',authenticate,async(req,res)=>{try{return res.json({data:{items:await listAuthSessions(req.principal!.id,req.authSessionId!)}});}catch{return res.status(503).json({error:{code:'AUTHENTICATION_STORE_UNAVAILABLE',message:'Session inventory is temporarily unavailable'}});}});
+app.post('/api/v1/auth/logout',authenticate,async(req,res)=>{try{const revoked=await revokeAuthSession(req.principal!.id,req.authSessionId!);return revoked?res.status(204).end():res.status(401).json({error:{code:'UNAUTHENTICATED',message:'The current session is no longer active'}});}catch{return res.status(503).json({error:{code:'AUTHENTICATION_STORE_UNAVAILABLE',message:'Session revocation is temporarily unavailable'}});}});
+app.delete('/api/v1/auth/sessions/:sessionId',authenticate,async(req,res)=>{const id=z.string().uuid().safeParse(req.params.sessionId);if(!id.success)return res.status(404).json({error:{code:'SESSION_NOT_FOUND',message:'Session was not found'}});try{const revoked=await revokeAuthSession(req.principal!.id,id.data);return revoked?res.status(204).end():res.status(404).json({error:{code:'SESSION_NOT_FOUND',message:'Active session was not found for this account'}});}catch{return res.status(503).json({error:{code:'AUTHENTICATION_STORE_UNAVAILABLE',message:'Session revocation is temporarily unavailable'}});}});
 app.post('/api/v1/agencies',authenticate,async(req,res)=>{
  const parsed=agencyCreateSchema.safeParse(req.body);
  if(!parsed.success)return res.status(400).json({error:{code:'VALIDATION_ERROR',message:'Agency name must contain 2 to 160 characters'}});
@@ -388,6 +413,7 @@ app.post('/api/v1/inquiries',inquiryRateLimit,async(req,res)=>{const parsed=inqu
 app.get('/api/v1/inquiries',authenticate,async(req,res)=>{const memberships=await agencyRepository.listForUser(req.principal!.id);if(!memberships.some(m=>m.status==='active'))return res.status(403).json({error:{code:'FORBIDDEN',message:'Active agency membership is required to access the enquiry inbox'}});const agency=await resolveActiveAgency(req,res);if(!agency)return;if(!['owner','admin'].includes(agency.role))return res.status(403).json({error:{code:'FORBIDDEN',message:'Agency owner or admin permission is required'}});return res.json({data:{items:await inquiryRepository.list(100,agency.id)}});});
 app.use('/demo',express.static(resolve(process.cwd(),'public/demo'),{index:'index.html'}));
 app.use('/console',express.static(resolve(process.cwd(),'public/console'),{index:'index.html'}));
+app.use('/reset-password',express.static(resolve(process.cwd(),'public/reset-password'),{index:'index.html'}));
 app.use((_req,res)=>res.status(404).json({error:{code:'NOT_FOUND',message:'Route was not found'}}));
 app.use((error:unknown,_req:express.Request,res:express.Response,next:express.NextFunction)=>{
  void next;app.emit('application-error',error);if(res.headersSent)return;

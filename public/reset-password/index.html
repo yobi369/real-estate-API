@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta name="robots" content="noindex,nofollow">
+  <title>Reset password · Secure Properties</title>
+  <link rel="stylesheet" href="/reset-password/style.css">
+  <script src="/reset-password/reset.js" defer></script>
+</head>
+<body>
+  <main class="panel">
+    <p class="eyebrow">SECURE PROPERTIES</p>
+    <h1>Choose a new password</h1>
+    <p class="intro">Set a new password for your account. Your existing sessions will be signed out.</p>
+    <form id="reset-form">
+      <label for="password">New password</label>
+      <input id="password" name="password" type="password" autocomplete="new-password" minlength="12" maxlength="128" required>
+      <p class="hint">At least 12 characters, including uppercase, lowercase, and a number.</p>
+      <label for="confirm-password">Confirm new password</label>
+      <input id="confirm-password" name="confirmPassword" type="password" autocomplete="new-password" minlength="12" maxlength="128" required>
+      <button type="submit">Update password</button>
+    </form>
+    <p id="status" role="status" aria-live="polite"></p>
+    <a href="/console/">Return to sign in</a>
+  </main>
+</body>
+</html>

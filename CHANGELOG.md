@@ -1,5 +1,31 @@
 # Changelog
 
+## Unreleased — 2026-11-21
+
+### Added
+- Server-side authentication sessions bound to signed bearer tokens, with active-session inventory, per-session revocation, and immediate logout.
+- Multi-agency workspaces with owner/admin/agent/viewer roles, tenant-scoped inventory and enquiry access, member administration, hashed email-bound invitations, and recipient-accepted ownership transfer.
+- Agency subscription plans, payment ledger, plan-based listing and team-seat quotas, and billing APIs.
+- Safaricom Daraja PayBill STK Push foundation with idempotent attempts, protected callbacks, amount/receipt matching, status-query reconciliation, and end-of-period cancellation scheduling.
+- PostgreSQL-backed distributed fixed-window rate limits with keyed HMAC client-address digests and production fail-closed behaviour.
+- One-time password recovery using hashed 256-bit tokens, 30-minute expiry, enumeration-resistant request acknowledgements, session revocation, and a browser reset page.
+- Provider-backed Resend email transport (disabled until configured) and persistent per-account lockout after eight failed logins for 15 minutes.
+- Agency console, fictional read-only property demo, PostgreSQL-backed validated image uploads, and service discovery endpoint.
+- Encrypted PostgreSQL logical-backup and guarded restore scripts with CI integration tests against disposable PostgreSQL 16 databases.
+
+### Security and operations
+- Added schema v6 `auth_sessions` and schema v7 identity recovery/lockout tables; authenticated requests verify active sessions and resolve current user roles from PostgreSQL.
+- Moved schema changes to an explicit migration command; application startup no longer runs schema DDL.
+- Added schema v5 readiness checks and restricted runtime database-role validation.
+- Expanded security, architecture, API, production-readiness, and PostgreSQL operations documentation.
+- Expanded CI to Node.js 22, 24, and 26 with dependency audits and PostgreSQL 16 operations checks.
+
+### Not yet production-approved
+- Email verification and refresh-token rotation remain incomplete. Password reset and account lockout code are implemented; live delivery requires a verified sender and staging email-provider credentials.
+- Automated invitation email delivery.
+- Daraja sandbox/production provider acceptance, refunds, and Till/Buy Goods support.
+- Independent off-host backup/restore evidence, production infrastructure, monitoring, penetration testing, and customer acceptance.
+
 ## 1.1.0 — 2026-10-26
 - Added PostgreSQL-backed users/properties schema, constraints, foreign keys and indexes with development-only in-memory fallback.
 - Added account registration/login, scrypt password hashing, expiring HMAC bearer tokens, authenticated listing creation, and owner/admin authorization for updates/deletes.
