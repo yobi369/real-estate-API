@@ -19,7 +19,7 @@ The demo inventory is isolated from customer listings. It is not a live marketpl
 
 - Property create/read/search/update/delete endpoints with validation, bounded pagination, filtering, publication lifecycle, and consistent errors.
 - PostgreSQL persistence with constraints, indexes, transactional schema migration, and a development/test-only in-memory adapter.
-- Email/password registration and login, scrypt password hashing, expiring HMAC-signed bearer tokens, server-side session inventory and individual revocation, and one-time secret-protected first-admin bootstrap.
+- Email/password registration and login, scrypt password hashing, expiring HMAC-signed bearer tokens, server-side session inventory and individual revocation, one-time secret-protected first-admin bootstrap, single-use password reset tokens, and persistent account lockout.
 - Multi-agency tenancy with agency-scoped listing and enquiry access, email-bound invitations, role administration, audit events, and recipient-accepted ownership transfer.
 - PostgreSQL-backed distributed rate limits across authentication, M-Pesa checkout, public search, and enquiries; production fails closed if the shared store is unavailable, and client addresses are stored as keyed HMAC digests rather than raw IPs.
 - Agency subscription and payment ledger foundation, plan quotas, Daraja PayBill STK Push, idempotent payment attempts, callback validation, status-query reconciliation, and cancellation scheduling.
@@ -50,7 +50,7 @@ Daraja integration currently supports customer-to-business PayBill STK Push. Pay
 
 ## Production deployment
 
-See docs/PRODUCTION-READINESS.md before using customer or personal data. The public demo is not a production customer environment. The agency workspace and billing foundations are implemented, but provider acceptance, identity lifecycle controls, independent security assurance, backup/restore operations, infrastructure, and customer onboarding remain release gates.
+See docs/PRODUCTION-READINESS.md before using customer or personal data. The public demo is not a production customer environment. The agency workspace and billing foundations are implemented. Password recovery code is present, but live email delivery requires a verified sender and provider credentials; email verification, independent security assurance, backup/restore operations, infrastructure, and customer onboarding remain release gates.
 
 ## Technical documentation
 
