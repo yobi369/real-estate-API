@@ -19,7 +19,7 @@ const schema=z.object({
  MPESA_CALLBACK_SECRET:z.string().regex(/^[A-Za-z0-9_-]{32,128}$/).optional(),
  EMAIL_PROVIDER:z.enum(['disabled','resend']).default('disabled'),
  EMAIL_API_KEY:z.string().min(1).optional(),
- EMAIL_FROM:z.string().email().optional(),
+ EMAIL_FROM:z.string().trim().min(1).optional(),
  APP_BASE_URL:z.string().url().optional()
 });
 const parsed=schema.safeParse(process.env);
