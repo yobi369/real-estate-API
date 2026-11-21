@@ -90,7 +90,13 @@ export async function loginUser(input:unknown):Promise<{principal:Principal,toke
  let user:{id:string,email:string,password_hash:string,role:Role}|undefined;
  if(pool){const r=await pool.query<{id:string,email:string,password_hash:string,role:Role}>('SELECT id,email,password_hash,role FROM users WHERE email=$1',[email]);user=r.rows[0];}
  else{const found=[...memoryUsers.values()].find(u=>u.email===email);if(found)user={id:found.id,email:found.email,password_hash:found.passwordHash,role:found.role};}
- if(!user||!(await verifyPassword(password,user.password_hash))){await recordLoginFailure(digest);return null;}
+ if(!user){
+  // Match the expensive password-verification path without creating persistent
+  // lockout rows for arbitrary, non-existent email addresses.
+  await verifyPassword(password,'00000000000000000000000000000000:'+('0'.repeat(128)));
+  return null;
+ }
+ if(!(await verifyPassword(password,user.password_hash))){await recordLoginFailure(digest);return null;}
  await clearLoginFailures(digest);
  const principal={id:user.id,email:user.email,role:user.role};return {principal,token:await issueSession(principal)};
 }
