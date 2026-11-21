@@ -3,7 +3,7 @@
 ## Request flow
 
 1. Express applies Helmet security headers, configured CORS, strict JSON parsing (1 MiB), request IDs, and structured logging with authorization, cookies, bootstrap headers, and request URLs redacted.
-2. Registration and login use scrypt password hashing. Bearer tokens are HMAC-SHA256 signed and expire after the configured TTL (one hour by default).
+2. Registration and login use scrypt password hashing. Bearer tokens are HMAC-SHA256 signed, expire after the configured TTL (one hour by default), and carry a session ID. Every authenticated request verifies that session against PostgreSQL and loads the current user role.
 3. Authenticated agency operations resolve X-Agency-ID against the caller's active membership. The header selects context; it never grants access by itself.
 4. Property writes, private inventory reads, membership operations, invitations, ownership transfers, enquiries, and billing are scoped to the selected agency and the caller's role.
 5. Public property reads expose published inventory only. Public responses omit internal owner and agency identifiers.
@@ -13,7 +13,7 @@
 ## Modules
 
 - src/domain/property.ts and src/domain/inquiry.ts: request and query schemas.
-- src/auth.ts: registration, password verification, token issuance/validation, principal middleware, and first-admin bootstrap.
+- src/auth.ts: registration, password verification, token issuance/validation, persisted session inventory and revocation, principal middleware, and first-admin bootstrap.
 - src/rate-limit.ts: bounded PostgreSQL-backed fixed-window rate limiting with development/test fallback.
 - src/db.ts and src/migrate.ts: runtime database pool, schema readiness, and explicit migration execution.
 - src/repositories/property-repository.ts: public published inventory and agency-scoped private inventory, writes, publication, quotas, and audit events.
@@ -51,7 +51,7 @@
 
 ## Database and operational principles
 
-- PostgreSQL schema version 5 is required by readiness, including agency, subscription, payment, audit, and shared rate-limit tables.
+- PostgreSQL schema version 6 is required by readiness, including the revocable auth_sessions table, including agency, subscription, payment, audit, and shared rate-limit tables.
 - Application startup does not run schema DDL. Run the explicit migration command as a controlled one-off operation using the migration role.
 - The current migration implementation is an idempotent transactional schema foundation, not yet a set of independently versioned migration files. Test changes on an isolated branch and retain operator-controlled rollback planning.
 - Keep runtime database privileges restricted. Do not store migration-owner credentials in the long-running service.
