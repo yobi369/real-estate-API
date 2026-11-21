@@ -1,59 +1,94 @@
 # API contract
 
-Base path: `/api/v1`. Public listing reads and customer enquiry submissions are available without an account. Agency-scoped listing writes and publication require an authenticated active agency membership and `X-Agency-ID`; publication is restricted to agency owners/admins. The enquiry inbox is restricted to the selected agency's owner/admin.
+Base path: /api/v1. JSON responses use a data envelope for successful resource responses and a consistent error envelope for failures. Public listing reads and customer enquiry submissions are unauthenticated. Agency operations require a bearer token and, where indicated, an X-Agency-ID header. X-Agency-ID selects an agency context; active membership is always checked server-side.
 
-## Register and login
-- `POST /api/v1/auth/register` with `{"email":"seller@example.com","password":"StrongPassword123"}`. Passwords require at least 12 characters with lowercase, uppercase, and a number.
-- `POST /api/v1/auth/login` with email and password. Returns a short-lived bearer token.
+## Authentication
 
-## Public listing search
-`GET /api/v1/properties?page=1&limit=20&category=property&city=Nairobi&propertyType=apartment&transactionType=sale&minPrice=1000000&maxPrice=20000000&search=riverside`
+- POST /api/v1/auth/register — create an account using email and password. Passwords require at least 12 characters with lowercase, uppercase, and a number. Returns a short-lived bearer token.
+- POST /api/v1/auth/login — authenticate with email and password. Returns a short-lived bearer token; default expiry is one hour. Each login creates a separately revocable server-side session.
+- GET /api/v1/auth/sessions — list the account's active sessions and identify the current session.
+- DELETE /api/v1/auth/sessions/{sessionId} — revoke one active session belonging to the authenticated account. Other accounts' sessions cannot be revoked.
+- POST /api/v1/auth/logout — revoke the current bearer session immediately.
+- POST /api/v1/admin/bootstrap — one-time first administrator and default agency creation. Requires the x-bootstrap-token header and a temporary ADMIN_BOOTSTRAP_TOKEN configured in the environment. Remove the environment secret immediately after successful bootstrap. Returns 409 once an administrator exists.
 
-Supported categories are `property`, `airbnb`, and `land`. Category is distinct from property type: a short-stay apartment uses category `airbnb`, property type `apartment`, transaction type `rent`, and price type `night`.
+Email verification, password reset, refresh tokens, and account recovery are not implemented yet. Access tokens are stored as server-side sessions and can be individually revoked; revocation is checked on every authenticated request. Rotating JWT_SECRET invalidates all existing tokens globally.
 
-## Create and manage listings
-`POST /api/v1/properties` with a bearer token, `X-Agency-ID`, and JSON. Agency owners, admins, and agents may create listings; viewers and non-members receive 403:
-```json
-{"title":"Coastal family home","description":"Bright home near amenities.","category":"property","price":12500000,"priceType":"total","currency":"KES","propertyType":"house","transactionType":"sale","bedrooms":3,"bathrooms":2,"city":"Mombasa","location":"Nyali","address":"Nyali, Mombasa, Kenya","country":"Kenya","areaSqm":180,"sizeAcres":0,"featured":false,"imageUrls":[]}
-```
-Owner identity and agency scope are derived from the verified token and selected active membership. `GET /api/v1/properties/{id}` reads a published listing. `PATCH` and `DELETE` require an active agency membership; agents may change their own listings, while agency owners/admins may manage all agency listings. New listings start as drafts and are not publicly visible until published.
+## Agency workspace and team
+
+- POST /api/v1/agencies — authenticated account creates an agency and becomes its owner.
+- GET /api/v1/agencies/me — list the authenticated user's active agency memberships.
+- GET /api/v1/agencies/members — owner/admin; list active, invited, and suspended membership records for the selected agency.
+- PATCH /api/v1/agencies/members/{userId} — owner/admin; change a non-owner member role to admin, agent, or viewer. Admins may only manage agent/viewer memberships and cannot grant admin.
+- DELETE /api/v1/agencies/members/{userId} — owner/admin; suspend a non-owner member. Self-removal and owner removal are blocked.
+- POST /api/v1/agencies/invitations — owner/admin; create an email-bound invitation for admin, agent, or viewer. Requires an active subscription and available team seat. The opaque token is returned once and must be delivered through a trusted channel; delivery is currently manual.
+- POST /api/v1/agencies/invitations/accept — authenticated matching-email account accepts the token. Tokens are hashed, expire after seven days, and cannot be reused.
+- DELETE /api/v1/agencies/invitations/{id} — owner/admin; revoke a pending invitation.
+- POST /api/v1/agencies/ownership-transfer — current owner nominates an active admin using targetUserId. Returns a one-time token for trusted delivery; expires after 48 hours.
+- POST /api/v1/agencies/ownership-transfer/accept — only the designated recipient can accept. On success the recipient becomes owner and the previous owner becomes admin.
+
+Role boundaries: owners have full agency control; admins can manage listings, billing, and agent/viewer memberships; agents can create listings and modify/delete their own listings; viewers have read-only agency access. Only owners/admins can publish listings or view the agency enquiry inbox.
+
+## Property inventory
+
+- GET /api/v1/properties — public paginated search of published listings. Supports page, limit, category, city, propertyType, transactionType, minPrice, maxPrice, and search filters.
+- GET /api/v1/properties/{id} — public read of a published listing.
+- GET /api/v1/agencies/properties — authenticated, agency-scoped private inventory, including drafts and archived listings. Supports the standard property query filters.
+- POST /api/v1/properties — owner/admin/agent creates a draft listing. Requires bearer token and X-Agency-ID. A current paid/trial subscription and available listing allowance are required.
+- PATCH /api/v1/properties/{id} — owner/admin can modify any listing in the agency; agents can modify their own.
+- DELETE /api/v1/properties/{id} — owner/admin can delete any listing in the agency; agents can delete their own.
+- PATCH /api/v1/properties/{id}/publication — owner/admin only; set draft, published, or archived. Public reads expose published listings only.
+
+Supported categories: property, airbnb, land. Supported property types: apartment, house, land, commercial. Supported transaction types: sale, rent, lease. Currency values: KES, USD, GBP.
+
+## Media
+
+- POST /api/v1/media — administrator-only raw image upload. Content-Type must match a valid JPEG, PNG, or WebP file signature. Maximum file size is 5 MiB. Persistent PostgreSQL storage is required.
+- GET /api/v1/media/{id} — retrieve a stored image by UUID. Responses use immutable caching and nosniff headers.
 
 ## Customer enquiries
-`POST /api/v1/inquiries` stores contact messages, property viewing requests, short-stay booking requests, and land site-visit requests. It accepts requestType (`general`, `booking`, `viewing`, or `site_visit`), name, email, phone, message, and optional service/listing/date/guest/pickup details. A success response is returned only after the repository has stored the enquiry.
-`POST /api/v1/inquiries` is rate-limited to 10 submissions per client IP per 15 minutes per API process. Authentication bootstrap is limited to 5 requests per 15 minutes, registration and login to 10 each per 15 minutes, and public property/demo searches to 120 per minute. These limits are process-local; use a shared limiter or edge/WAF enforcement for multi-instance deployments. `GET /api/v1/inquiries` returns the latest 100 enquiries and requires an admin bearer token. Standard registered users receive 403.
 
-## First administrator setup
-Set a temporary `ADMIN_BOOTSTRAP_TOKEN` (at least 32 characters) in the API host's secret environment. Call `POST /api/v1/admin/bootstrap` with the `x-bootstrap-token` header and the chosen administrator email/password. The endpoint is disabled without the secret and returns 409 after an administrator exists. Remove the bootstrap token from the host after creating the first administrator.
+- POST /api/v1/inquiries — public enquiry submission for general, booking, viewing, or site-visit requests. Listing-linked enquiries derive their agency from the listing. General enquiries may use an active agencySlug.
+- GET /api/v1/inquiries — owner/admin only for the selected agency; returns up to 100 recent enquiries.
+
+A success response is returned only after the enquiry has been persisted.
+
+## Subscription and M-Pesa billing
+
+- GET /api/v1/billing/plans — list active plans only. The seeded plans are inactive until an authorised operator activates them after commercial and payment acceptance gates are met.
+- GET /api/v1/billing/subscription — owner/admin; returns the selected agency's current subscription and recent payment history.
+- POST /api/v1/billing/mpesa/stk-push — owner/admin; requires X-Agency-ID, an Idempotency-Key (16–128 characters), planCode, and phoneNumber. Starts a Daraja PayBill STK Push. A pending attempt is held when the provider outcome is unknown to avoid duplicate charges.
+- POST /api/v1/webhooks/mpesa/{secret} — unauthenticated Safaricom callback endpoint protected by a configured high-entropy callback path secret. Callback payloads are matched to the pending checkout and expected amount before activation.
+- POST /api/v1/billing/payments/{paymentId}/reconcile — owner/admin; queries Daraja status for a pending payment when a callback is delayed or missing.
+- POST /api/v1/billing/subscription/cancel — owner/admin; schedules cancellation at the end of the current paid period.
+
+The adapter currently supports customer-to-business PayBill STK Push. Till/Buy Goods, refunds, API-key monetization, and usage metering are not implemented. Configure all MPESA_* settings together in the secret store; do not expose them in source control or chat. Daraja sandbox credentials and end-to-end provider verification remain outstanding.
+
+Initial monthly plan pricing and allowances:
+- Starter: KSh 2,500; 25 listings; 3 team seats.
+- Professional: KSh 5,000; 100 listings; 10 team seats.
+- Business: KSh 12,000; 500 listings; 30 team seats.
+
+Plans are seeded inactive. Creating listings and inviting team members requires a current paid/trial subscription. Draft and published listings count; archived listings do not. Active members and unexpired pending invitations consume team seats. Expiry/grace-period policy remains a release decision.
 
 ## Health and documentation
-- `GET /health/live`
-- `GET /health/ready` — returns 200 only when PostgreSQL is configured and reachable.
-- `GET /openapi.json`
-- `GET /docs/`
 
-Production requires PostgreSQL, a unique `JWT_SECRET`, and a `CORS_ORIGIN` allowlist containing the website origin. The bootstrap token is only needed for initial administrator creation and should then be removed.
+- GET / — service discovery metadata.
+- GET /health/live — process liveness.
+- GET /health/ready — returns 200 only when PostgreSQL is reachable and schema version 5 plus all required tables are present; otherwise returns 503.
+- GET /openapi.json — OpenAPI 3.1 contract.
+- GET /docs/ — Swagger UI.
+
+## Rate limits
+
+Limits are shared across replicas using PostgreSQL fixed-window counters. Production fails closed with HTTP 503 if the shared store is unavailable. Client addresses are stored as keyed HMAC-SHA256 digests rather than raw IP addresses.
+
+- Bootstrap: 5 requests per 15 minutes.
+- Registration: 10 requests per 15 minutes.
+- Login: 10 requests per 15 minutes.
+- M-Pesa checkout and reconciliation: 5 requests per 15 minutes.
+- Public property/demo search: 120 requests per minute.
+- Public enquiries: 10 requests per 15 minutes.
 
 ## Performance testing
 
-Use `npm run benchmark` against a running local or staging API. Configure `API_BASE_URL`, `BENCHMARK_PATH`, `BENCHMARK_REQUESTS`, and `BENCHMARK_CONCURRENCY`; optional error-rate and p95 thresholds are documented in [BENCHMARKING.md](BENCHMARKING.md). Benchmark output is environment-specific and is not a production capacity guarantee.
-
-
-## Agency invitations
-All invitation routes require a bearer token and an `X-Agency-ID` header where an agency context is required.
-
-- `POST /api/v1/agencies/invitations` — agency owner/admin creates an invitation using `{"email":"agent@example.com","role":"agent"}`. Allowed roles are `admin`, `agent`, and `viewer`; owner cannot be granted by invitation. The response contains the opaque token once. Deliver it through a trusted channel; automated email delivery is not configured.
-- `POST /api/v1/agencies/invitations/accept` — an authenticated user accepts using `{"token":"..."}`. The signed-in account email must match the invitation email. Tokens are stored as SHA-256 hashes, expire after seven days, and cannot be reused after acceptance or revocation.
-- `DELETE /api/v1/agencies/invitations/{id}` — agency owner/admin revokes a pending invitation.
-
-Invitation creation, acceptance, and revocation write audit events in the same transaction as the state change. An existing active membership cannot be overwritten by accepting an invitation.
-
-
-## Agency membership administration
-
-All routes below require a bearer token and a valid `X-Agency-ID`. The selected agency is verified against the caller's active membership.
-
-- `GET /api/v1/agencies/members` — owner/admin only; lists active, invited, and suspended membership records for the selected agency, including member email, role, status, and join date.
-- `PATCH /api/v1/agencies/members/{userId}` with `{"role":"agent"}` — changes a non-owner member role. Allowed roles are `admin`, `agent`, and `viewer`. Owners may assign any non-owner role; admins may only manage agent/viewer members and cannot grant admin privileges.
-- `DELETE /api/v1/agencies/members/{userId}` — suspends an active non-owner membership. Owners may remove any non-owner member; admins may remove only agents/viewers. Self-removal is blocked.
-
-The owner role is immutable through member-management endpoints. Ownership transfer is a two-step, recipient-accepted workflow: POST /api/v1/agencies/ownership-transfer (current owner only, with X-Agency-ID and a targetUserId UUID) creates a 48-hour transfer token; deliver it to the designated administrator through a trusted channel. POST /api/v1/agencies/ownership-transfer/accept requires that designated admin's authenticated account and the token. On acceptance, the recipient becomes owner and the previous owner becomes admin in one transaction. Only one pending transfer exists per agency; a new request supersedes the previous pending request. Tokens are stored as SHA-256 hashes and cannot be reused. Transfer creation and acceptance are audited transactionally. The owner cannot be removed through member-management routes. Cross-agency member access is denied.
+Use npm run benchmark against a running local or staging API. Configure API_BASE_URL, BENCHMARK_PATH, BENCHMARK_REQUESTS, and BENCHMARK_CONCURRENCY. Benchmark output is environment-specific and is not a production capacity guarantee.

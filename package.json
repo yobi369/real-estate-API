@@ -1,6 +1,6 @@
 {
   "name": "real-estate-api",
-  "version": "1.2.0",
+  "version": "1.4.0",
   "private": true,
   "type": "module",
   "description": "PostgreSQL-backed real estate inventory and customer enquiry API",
