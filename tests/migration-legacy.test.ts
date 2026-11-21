@@ -118,11 +118,10 @@ describe('legacy PostgreSQL tenancy migration', () => {
     const versions = await isolatedPool.query<{ versions: number[] }>(
       'SELECT array_agg(version ORDER BY version) AS versions FROM schema_migrations'
     );
-    const rateLimitTable = await isolatedPool.query<{ exists: boolean }>(
-      "SELECT to_regclass('api_rate_limit_buckets') IS NOT NULL AS exists"
+    const requiredTables = await isolatedPool.query<{ rate_limit: boolean; auth_sessions: boolean }>(
+      "SELECT to_regclass('api_rate_limit_buckets') IS NOT NULL AS rate_limit, to_regclass('auth_sessions') IS NOT NULL AS auth_sessions"
     );
-    expect(versions.rows[0]?.versions).toEqual(
-      rateLimitTable.rows[0]?.exists ? [1, 2, 3, 4, 5] : [1, 2, 3, 4]
-    );
+    expect(requiredTables.rows[0]).toEqual({ rate_limit: true, auth_sessions: true });
+    expect(versions.rows[0]?.versions).toEqual([1, 2, 3, 4, 5, 6]);
   });
 });
