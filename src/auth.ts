@@ -18,7 +18,7 @@ const loginSchema=z.object({email:z.string().trim().email().max(254).transform(v
 const memoryUsers=new Map<string,{id:string,email:string,passwordHash:string,role:Role}>();
 const memorySessions=new Map<string,SessionRecord>();
 const memoryLoginAttempts=new Map<string,{failures:number;lockedUntil:number|null}>();
-const memoryResetTokens=new Map<string,{userId:string;expiresAt:number;consumed:boolean}>();
+const memoryResetTokens=new Map<string,{userId:string;expiresAt:number;createdAt:number;consumed:boolean}>();
 const RESET_TOKEN_TTL_SECONDS=30*60;
 const LOGIN_FAILURE_LIMIT=8;
 const LOGIN_LOCKOUT_SECONDS=15*60;
@@ -112,9 +112,21 @@ export async function requestPasswordReset(input:unknown):Promise<void>{
  const expiresAt=new Date(Date.now()+RESET_TOKEN_TTL_SECONDS*1000);
  if(pool){
   const client=await pool.connect();
-  try{await client.query('BEGIN');await client.query("UPDATE auth_email_tokens SET consumed_at=now() WHERE user_id=$1 AND purpose='password_reset' AND consumed_at IS NULL",[user.id]);await client.query("INSERT INTO auth_email_tokens(token_hash,user_id,purpose,expires_at) VALUES($1,$2,'password_reset',$3)",[tokenHash,user.id,expiresAt]);await client.query('COMMIT');}
-  catch(error){await client.query('ROLLBACK');throw error;}finally{client.release();}
- }else{for(const item of memoryResetTokens.values())if(item.userId===user.id&&!item.consumed)item.consumed=true;memoryResetTokens.set(tokenHash,{userId:user.id,expiresAt:expiresAt.getTime(),consumed:false});}
+  try{
+   await client.query('BEGIN');
+   await client.query('SELECT id FROM users WHERE id=$1 FOR UPDATE',[user.id]);
+   const recent=await client.query("SELECT 1 FROM auth_email_tokens WHERE user_id=$1 AND purpose='password_reset' AND created_at>now()-interval '60 seconds' LIMIT 1",[user.id]);
+   if(recent.rows.length){await client.query('COMMIT');return;}
+   await client.query("UPDATE auth_email_tokens SET consumed_at=now() WHERE user_id=$1 AND purpose='password_reset' AND consumed_at IS NULL",[user.id]);
+   await client.query("INSERT INTO auth_email_tokens(token_hash,user_id,purpose,expires_at) VALUES($1,$2,'password_reset',$3)",[tokenHash,user.id,expiresAt]);
+   await client.query('COMMIT');
+  }catch(error){await client.query('ROLLBACK');throw error;}finally{client.release();}
+ }else{
+  const recent=[...memoryResetTokens.values()].some(item=>item.userId===user.id&&item.createdAt>Date.now()-60_000);
+  if(recent)return;
+  for(const item of memoryResetTokens.values())if(item.userId===user.id&&!item.consumed)item.consumed=true;
+  memoryResetTokens.set(tokenHash,{userId:user.id,expiresAt:expiresAt.getTime(),createdAt:Date.now(),consumed:false});
+ }
  await sendPasswordResetEmail({to:user.email,resetUrl:passwordResetUrl(token),expiresInMinutes:RESET_TOKEN_TTL_SECONDS/60});
 }
 export async function completePasswordReset(input:unknown):Promise<boolean>{
