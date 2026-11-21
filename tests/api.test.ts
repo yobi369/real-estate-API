@@ -31,14 +31,14 @@ describe('authentication and authorization',()=>{it('requires a bearer token to 
 });
 it('sends one-time password reset links, revokes existing sessions, and rejects token reuse',async()=>{
  const oldToken=await register('reset-owner@example.com');
- let delivered:{to:string;resetUrl:string;expiresInMinutes:number}|null=null;
- setEmailTransportForTests(async message=>{delivered=message;});
+ const delivered:Array<{to:string;resetUrl:string;expiresInMinutes:number}>=[];
+ setEmailTransportForTests(async message=>{delivered.push(message);});
  const requested=await request(app).post('/api/v1/auth/password-reset/request').set('X-Forwarded-For','198.51.100.210').send({email:'reset-owner@example.com'});
  expect(requested.status).toBe(202);
  expect(requested.body.data.message).toContain('If an account exists');
- await vi.waitFor(()=>expect(delivered).not.toBeNull());
- expect(delivered?.to).toBe('reset-owner@example.com');
- const link=new URL(delivered!.resetUrl);
+ await vi.waitFor(()=>expect(delivered).toHaveLength(1));
+ expect(delivered[0]?.to).toBe('reset-owner@example.com');
+ const link=new URL(delivered[0]!.resetUrl);
  const token=link.searchParams.get('token');
  expect(token).toBeTruthy();
  const changed=await request(app).post('/api/v1/auth/password-reset/complete').set('X-Forwarded-For','198.51.100.211').send({token,password:'NewSecurePassword456'});
