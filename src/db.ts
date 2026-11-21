@@ -38,6 +38,23 @@ export async function migrate(targetPool: pg.Pool | null = migrationPool): Promi
         role text NOT NULL DEFAULT 'user' CHECK (role IN ('user','admin')),
         created_at timestamptz NOT NULL DEFAULT now()
       );
+      CREATE TABLE IF NOT EXISTS auth_sessions (
+        id uuid PRIMARY KEY,
+        user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        expires_at timestamptz NOT NULL,
+        revoked_at timestamptz,
+        CHECK (expires_at > created_at)
+      );
+      CREATE INDEX IF NOT EXISTS auth_sessions_user_active_idx
+        ON auth_sessions (user_id,expires_at DESC) WHERE revoked_at IS NULL;
+      DO $auth_session_runtime_grants$
+      BEGIN
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname='secure_properties_runtime') THEN
+          EXECUTE 'GRANT SELECT,INSERT,UPDATE,DELETE ON TABLE public.auth_sessions TO secure_properties_runtime';
+        END IF;
+      END
+      $auth_session_runtime_grants$;
       CREATE TABLE IF NOT EXISTS properties (
         id uuid PRIMARY KEY,
         owner_id uuid NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
@@ -288,7 +305,7 @@ export async function migrate(targetPool: pg.Pool | null = migrationPool): Promi
       END
       $tenancy_backfill$;
 
-      INSERT INTO schema_migrations(version) VALUES (1),(2),(3),(4),(5) ON CONFLICT (version) DO NOTHING;
+      INSERT INTO schema_migrations(version) VALUES (1),(2),(3),(4),(5),(6) ON CONFLICT (version) DO NOTHING;
     `);
     await client.query('COMMIT');
   } catch (error) {
