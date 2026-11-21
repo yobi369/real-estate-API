@@ -405,6 +405,7 @@ app.post('/api/v1/inquiries',inquiryRateLimit,async(req,res)=>{const parsed=inqu
 app.get('/api/v1/inquiries',authenticate,async(req,res)=>{const memberships=await agencyRepository.listForUser(req.principal!.id);if(!memberships.some(m=>m.status==='active'))return res.status(403).json({error:{code:'FORBIDDEN',message:'Active agency membership is required to access the enquiry inbox'}});const agency=await resolveActiveAgency(req,res);if(!agency)return;if(!['owner','admin'].includes(agency.role))return res.status(403).json({error:{code:'FORBIDDEN',message:'Agency owner or admin permission is required'}});return res.json({data:{items:await inquiryRepository.list(100,agency.id)}});});
 app.use('/demo',express.static(resolve(process.cwd(),'public/demo'),{index:'index.html'}));
 app.use('/console',express.static(resolve(process.cwd(),'public/console'),{index:'index.html'}));
+app.use('/reset-password',express.static(resolve(process.cwd(),'public/reset-password'),{index:'index.html'}));
 app.use((_req,res)=>res.status(404).json({error:{code:'NOT_FOUND',message:'Route was not found'}}));
 app.use((error:unknown,_req:express.Request,res:express.Response,next:express.NextFunction)=>{
  void next;app.emit('application-error',error);if(res.headersSent)return;
