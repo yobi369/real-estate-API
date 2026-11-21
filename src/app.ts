@@ -132,7 +132,7 @@ app.post('/api/v1/auth/password-reset/request',passwordResetRequestRateLimit,(re
  });
  return res.status(202).json({data:{message:'If an account exists for that email, password reset instructions will be sent.'}});
 });
-app.post('/api/v1/auth/password-reset/complete'',passwordResetCompleteRateLimit,async(req,res)=>{
+app.post('/api/v1/auth/password-reset/complete',passwordResetCompleteRateLimit,async(req,res)=>{
  try{const completed=await completePasswordReset(req.body);return completed?res.status(204).end():res.status(400).json({error:{code:'RESET_TOKEN_INVALID',message:'The reset link is invalid, expired, or already used'}});}
  catch{return res.status(503).json({error:{code:'PASSWORD_RESET_UNAVAILABLE',message:'Password reset is temporarily unavailable'}});}
 });
