@@ -5,7 +5,7 @@
 - Helmet security headers, disabled Express fingerprint, configured CORS, strict Zod validation, 1 MiB JSON body limit, request IDs, and structured logging with authorization, cookies, bootstrap headers, and request URLs redacted.
 - Registration enforces a 12-character password with lowercase, uppercase, and numeric characters. Passwords are salted and derived with Node.js scrypt.
 - HMAC-SHA256 bearer tokens have bounded expiry and signature verification uses timing-safe comparison. The default TTL is one hour.
-- Each token is bound to a persisted `auth_sessions` record and a user. Every authenticated request verifies that the session remains active and loads the current user role from PostgreSQL; logout and account session management can revoke one session immediately.
+- Each token is bound to a persisted `auth_sessions` record and a user. Password recovery uses cryptographically random one-time tokens stored only as SHA-256 digests, expires after 30 minutes, consumes atomically, and revokes all active sessions after a password change. Reset-request responses do not disclose whether an email is registered. Every authenticated request verifies that the session remains active and loads the current user role from PostgreSQL; logout and account session management can revoke one session immediately.
 - First-admin bootstrap is secret-protected and one-time; production requires PostgreSQL and a non-default JWT secret. The bootstrap secret must be removed after initial setup.
 - Authenticated agency operations resolve the selected agency against the caller's active membership. Property, enquiry, invitation, membership, ownership-transfer, and billing operations enforce agency scope and role permissions.
 - Public listing reads are restricted to published inventory and omit owner/agency identifiers.
@@ -20,7 +20,7 @@
 
 ## Known gaps before public launch
 
-- Implement email verification, secure password reset, account recovery, session inventory, per-session revocation, and account abuse/lockout workflows. Rotating JWT_SECRET invalidates existing tokens globally but is not a substitute for per-session revocation.
+- Implement email verification, refresh-token rotation, and account abuse/lockout workflows. Password reset is implemented but live delivery requires a configured provider endpoint, API key, verified sender, and application URL. Rotating JWT_SECRET invalidates existing tokens globally but is not a substitute for per-session revocation.
 - Complete an independent authorization review and penetration test, and review audit-event coverage for every privileged operation.
 - Tune shared rate-limit thresholds using representative staging traffic and retain edge/WAF protection for volumetric attacks.
 - Automated invitation email delivery, resend, expiry notifications, and verified sender/domain configuration are not implemented; invitation delivery is currently manual.
