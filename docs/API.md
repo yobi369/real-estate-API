@@ -6,7 +6,9 @@ Base path: /api/v1. JSON responses use a data envelope for successful resource r
 
 - POST /api/v1/auth/register — create an account using email and password. Passwords require at least 12 characters with lowercase, uppercase, and a number. Returns a short-lived bearer token.
 - POST /api/v1/auth/login — authenticate with email and password. Returns a short-lived bearer token; default expiry is one hour. Each login creates a separately revocable server-side session.
-- POST /api/v1/auth/password-reset/request — request a one-time password reset email. Returns the same 202 response whether or not the email exists. Requires the email provider settings.\n- POST /api/v1/auth/password-reset/complete — submit a reset token and new password. The 30-minute token is single-use; successful reset revokes all active sessions.\n- GET /api/v1/auth/sessions — list the account's active sessions and identify the current session.
+- POST /api/v1/auth/password-reset/request — request a one-time password reset email. Returns the same 202 response whether or not the email exists. Requires the email provider settings.
+- POST /api/v1/auth/password-reset/complete — submit a reset token and new password. The 30-minute token is single-use; successful reset revokes all active sessions.
+- GET /api/v1/auth/sessions — list the account's active sessions and identify the current session.
 - DELETE /api/v1/auth/sessions/{sessionId} — revoke one active session belonging to the authenticated account. Other accounts' sessions cannot be revoked.
 - POST /api/v1/auth/logout — revoke the current bearer session immediately.
 - POST /api/v1/admin/bootstrap — one-time first administrator and default agency creation. Requires the x-bootstrap-token header and a temporary ADMIN_BOOTSTRAP_TOKEN configured in the environment. Remove the environment secret immediately after successful bootstrap. Returns 409 once an administrator exists.
