@@ -4,8 +4,8 @@ Base path: /api/v1. JSON responses use a data envelope for successful resource r
 
 ## Authentication
 
-- POST /api/v1/auth/register — create an account using email and password. Passwords require at least 12 characters with lowercase, uppercase, and a number. Returns a short-lived bearer token.
-- POST /api/v1/auth/login — authenticate with email and password. Returns a short-lived bearer token; default expiry is one hour. Each login creates a separately revocable server-side session.
+- POST /api/v1/auth/register — create an account using email and password. Passwords require at least 12 characters with lowercase, uppercase, and a number. Production returns 202 and sends a verification link; development/test may return a bearer token immediately.
+- POST /api/v1/auth/login — authenticate with a verified email and password. Returns a short-lived bearer token; default expiry is one hour. Five consecutive failures lock the account for 15 minutes. Each login creates a separately revocable server-side session.
 - POST /api/v1/auth/email-verification/request — request an email verification link without revealing whether an account exists.
 - POST /api/v1/auth/email-verification/complete — consume a one-time 24-hour verification token.
 - POST /api/v1/auth/password-reset/request — request a one-time password reset email. Returns the same 202 response whether or not the email exists. Requires the email provider settings.
