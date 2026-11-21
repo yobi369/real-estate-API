@@ -8,7 +8,7 @@ This checklist separates implemented controls from external or incomplete releas
 - [x] PostgreSQL repositories, constraints, indexes, multi-agency schema, audit events, subscription/payment tables, and shared rate-limit table.
 - [x] Development/test in-memory adapter; readiness returns 503 without PostgreSQL.
 - [x] Explicit transactional migration command; application startup does not run schema DDL.
-- [x] Scrypt password hashing, expiring HMAC-signed bearer tokens, and secret-protected one-time first-admin bootstrap.
+- [x] Scrypt password hashing, expiring HMAC-signed bearer tokens, persisted per-session records, session inventory, individual session revocation, and secret-protected one-time first-admin bootstrap.
 - [x] Agency onboarding, active membership context resolution, agency-scoped listing writes/private inventory, publication lifecycle, scoped enquiry inbox, member administration, invitation lifecycle, and two-step ownership transfer.
 - [x] Public reads restricted to published listings; public responses omit owner and agency identifiers.
 - [x] Authenticated agency console for inventory, enquiries, and team operations; fictional buyer demo is read-only and isolated from customer listings.
@@ -36,7 +36,7 @@ This checklist separates implemented controls from external or incomplete releas
 
 ### Identity and application security
 
-- [ ] Implement email verification, secure password reset/account recovery, per-session token revocation, session inventory, and account abuse/lockout workflows.
+- [ ] Implement email verification, secure password reset/account recovery, refresh-token rotation, and account abuse/lockout workflows. Per-session inventory and revocation are implemented.
 - [ ] Complete independent authorization review, penetration testing, and audit-event coverage review.
 - [ ] Complete dependency, secret, static-analysis, and runtime review; resolve material findings.
 - [ ] Validate request timeouts, payload limits, and failure handling in the deployed environment.
