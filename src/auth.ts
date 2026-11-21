@@ -71,6 +71,7 @@ export async function createPasswordResetToken(emailInput:string):Promise<string
  const client=await pool.connect();
  try{
   await client.query('BEGIN');
+  await client.query('DELETE FROM password_reset_tokens WHERE expires_at<=now() OR consumed_at IS NOT NULL');
   const user=await client.query<{id:string}>('SELECT id FROM users WHERE email=$1',[email]);
   if(!user.rows[0]){await client.query('COMMIT');return null;}
   const token=randomBytes(32).toString('base64url');
