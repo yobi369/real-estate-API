@@ -56,6 +56,31 @@ The script:
 
 Copy both the `.dump.age` and `.dump.age.sha256` files to a separate, encrypted, access-controlled storage location. Verify the copied checksum. A local copy on the same host or volume is not an off-host backup.
 
+## Optional S3-compatible off-host copy
+
+The backup script can upload the encrypted dump and checksum to a private S3-compatible object store after the local backup is written:
+
+```bash
+DATABASE_URL='(load from approved secret store)' \
+BACKUP_DIR='/secure-backup-volume/real-estate-api' \
+AGE_RECIPIENT='age1...' \
+BACKUP_S3_URI='s3://private-bucket/real-estate-api' \
+AWS_ACCESS_KEY_ID='(load from approved secret store)' \
+AWS_SECRET_ACCESS_KEY='(load from approved secret store)' \
+AWS_ENDPOINT_URL='(provider S3 endpoint; omit for AWS)' \
+AWS_DEFAULT_REGION='(provider region; R2 uses auto)' \
+bash scripts/backup-postgres.sh
+```
+
+- Install AWS CLI v2 on the operator host.
+- Use a private bucket and credentials scoped to the single backup bucket/prefix with only the required object read/write permissions.
+- For Cloudflare R2, use the account's S3 endpoint and an R2 S3 token; never use a global Cloudflare API token for backup jobs.
+- The script uploads the `.dump.age` and `.sha256` objects, downloads the encrypted dump again, and compares SHA-256 digests before reporting the remote copy verified.
+- If `BACKUP_S3_URI` is absent, the script explicitly warns that the run created only a local backup. It does not silently claim off-host protection.
+- Configure and verify object lifecycle/retention separately in the storage provider. Do not enable automatic deletion until the retention policy is approved and a restore has been proven.
+
+The CI integration test exercises this upload/download verification using a local mock S3 endpoint. It validates the script's copy and checksum flow, not live credentials, provider availability, or lifecycle policy.
+
 ## Automated backup/restore verification
 
 CI runs an end-to-end test against a disposable PostgreSQL 16 database. It generates an ephemeral age identity, writes a probe row, creates an encrypted logical backup, restores it into a newly created empty database, verifies the restored row, and confirms that a second restore is refused once the target is populated.
