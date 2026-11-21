@@ -19,7 +19,7 @@ The demo inventory is isolated from customer listings. It is not a live marketpl
 
 - Property create/read/search/update/delete endpoints with validation, bounded pagination, filtering, publication lifecycle, and consistent errors.
 - PostgreSQL persistence with constraints, indexes, transactional schema migration, and a development/test-only in-memory adapter.
-- Email/password registration and login, scrypt password hashing, expiring HMAC-signed bearer tokens, server-side session inventory and individual revocation, and one-time secret-protected first-admin bootstrap.
+- Email/password registration and login, scrypt password hashing, expiring HMAC-signed bearer tokens, server-side session inventory and individual revocation, one-time password recovery and email verification with hashed one-time tokens, account-level login lockout, and session revocation, and one-time secret-protected first-admin bootstrap.
 - Multi-agency tenancy with agency-scoped listing and enquiry access, email-bound invitations, role administration, audit events, and recipient-accepted ownership transfer.
 - PostgreSQL-backed distributed rate limits across authentication, M-Pesa checkout, public search, and enquiries; production fails closed if the shared store is unavailable, and client addresses are stored as keyed HMAC digests rather than raw IPs.
 - Agency subscription and payment ledger foundation, plan quotas, Daraja PayBill STK Push, idempotent payment attempts, callback validation, status-query reconciliation, and cancellation scheduling.

@@ -7,7 +7,7 @@ const api = async (path, options={}) => {
   const headers = {'Accept':'application/json', ...(options.body ? {'Content-Type':'application/json'} : {}), ...(state.token ? {'Authorization':`Bearer ${state.token}`} : {}), ...(state.agency ? {'X-Agency-ID':state.agency.id} : {}), ...(options.headers||{})};
   const response = await fetch(path, {...options, headers});
   const payload = response.status===204 ? null : await response.json().catch(()=>null);
-  if(!response.ok) throw new Error(payload?.error?.message || `Request failed (${response.status})`);
+  if(!response.ok) { const error=new Error(payload?.error?.message || `Request failed (${response.status})`); error.code=payload?.error?.code; throw error; }
   return payload;
 };
 function message(selector, text, kind='') { const node=$(selector); if(!node)return; node.textContent=text; node.className='notice'+(kind?' '+kind:''); }
@@ -19,6 +19,15 @@ function setAuthMode(register) {
   $('#auth-form [name=password]').setAttribute('autocomplete',register?'new-password':'current-password');
   $('#auth-form [name=password]').setAttribute('minlength',register?'12':'1');
   message('#auth-message','');
+  $('#resend-verification').classList.add('hidden');
+}
+function showRecovery(mode='reset-request',token='') {
+  $('#auth-view').classList.add('hidden'); $('#workspace-view').classList.add('hidden'); $('#create-agency-view').classList.add('hidden');
+  $('#recovery-view').classList.remove('hidden');
+  for(const id of ['reset-request-form','email-verification-request-form','reset-complete-form','verify-complete-form']) $('#'+id).classList.toggle('hidden',id!==mode);
+  $('#recovery-title').textContent=mode.includes('verify')?'Verify your email address':mode==='reset-complete-form'?'Choose a new password':'Reset your password';
+  const form=$('#'+mode); if(token&&form?.elements.token) form.elements.token.value=token;
+  message('#recovery-message','');
 }
 function show(view) {
   state.view=view; $$('.view').forEach(el=>el.classList.toggle('active',el.id===`view-${view}`));
@@ -91,11 +100,48 @@ function renderTeam() {
 }
 $('#auth-form').addEventListener('submit',async event=>{
  event.preventDefault(); const form=new FormData(event.currentTarget); const body={email:String(form.get('email')).trim(),password:String(form.get('password'))};
- try { const result=await api(state.register?'/api/v1/auth/register':'/api/v1/auth/login',{method:'POST',body:JSON.stringify(body)}); state.token=result.data.token; sessionStorage.setItem('sp_token',state.token); state.view='overview'; await startWorkspace(); }
- catch(error){message('#auth-message',error.message,'error');}
+ try {
+  const result=await api(state.register?'/api/v1/auth/register':'/api/v1/auth/login',{method:'POST',body:JSON.stringify(body)});
+  if(!result?.data?.token){message('#auth-message',result?.data?.message||'Check your email for the next step.','success');return;}
+  state.token=result.data.token; sessionStorage.setItem('sp_token',state.token); state.view='overview'; await startWorkspace();
+ }
+ catch(error){
+  message('#auth-message',error.message,'error');
+  if(error.code==='EMAIL_VERIFICATION_REQUIRED') $('#resend-verification').classList.remove('hidden');
+ }
 });
 $('#auth-switch').addEventListener('click',()=>setAuthMode(!state.register));
-$('#sign-out').addEventListener('click',()=>{sessionStorage.removeItem('sp_token');sessionStorage.removeItem('sp_agency');state.token='';state.agency=null;$('#workspace-view').classList.add('hidden');$('#sign-out').classList.add('hidden');$('#auth-view').classList.remove('hidden');setAuthMode(false);});
+$('#forgot-password').addEventListener('click',()=>showRecovery('reset-request-form'));
+$('#resend-verification').addEventListener('click',()=>{
+ showRecovery('email-verification-request-form');
+ $('#email-verification-request-form [name=email]').value=$('#auth-form [name=email]').value;
+});
+$('#back-to-signin').addEventListener('click',()=>{
+ $('#recovery-view').classList.add('hidden');$('#auth-view').classList.remove('hidden');setAuthMode(false);
+ const url=new URL(window.location.href);url.search='';history.replaceState({},'',url.pathname);
+});
+$('#reset-request-form').addEventListener('submit',async event=>{
+ event.preventDefault();const email=String(new FormData(event.currentTarget).get('email')).trim();
+ try{const result=await api('/api/v1/auth/password-reset/request',{method:'POST',body:JSON.stringify({email})});message('#recovery-message',result.data.message,'success');}
+ catch(error){message('#recovery-message',error.message,'error');}
+});
+$('#email-verification-request-form').addEventListener('submit',async event=>{
+ event.preventDefault();const email=String(new FormData(event.currentTarget).get('email')).trim();
+ try{const result=await api('/api/v1/auth/email-verification/request',{method:'POST',body:JSON.stringify({email})});message('#recovery-message',result.data.message,'success');}
+ catch(error){message('#recovery-message',error.message,'error');}
+});
+$('#reset-complete-form').addEventListener('submit',async event=>{
+ event.preventDefault();const data=new FormData(event.currentTarget);
+ try{await api('/api/v1/auth/password-reset/complete',{method:'POST',body:JSON.stringify({token:String(data.get('token')),password:String(data.get('password'))})});event.currentTarget.reset();message('#recovery-message','Your password has been changed. Sign in with your new password.','success');}
+ catch(error){message('#recovery-message',error.message,'error');}
+});
+$('#verify-complete-form').addEventListener('submit',async event=>{
+ event.preventDefault();const token=String(new FormData(event.currentTarget).get('token'));
+ try{await api('/api/v1/auth/email-verification/complete',{method:'POST',body:JSON.stringify({token})});message('#recovery-message','Your email address is verified. You can now sign in.','success');event.currentTarget.classList.add('hidden');}
+ catch(error){message('#recovery-message',error.message,'error');}
+});
+
+$('#sign-out').addEventListener('click',()=>{sessionStorage.removeItem('sp_token');sessionStorage.removeItem('sp_agency');state.token='';state.agency=null;$('#workspace-view').classList.add('hidden');$('#recovery-view').classList.add('hidden');$('#sign-out').classList.add('hidden');$('#auth-view').classList.remove('hidden');setAuthMode(false);});
 $('#agency-form').addEventListener('submit',async event=>{event.preventDefault();const name=String(new FormData(event.currentTarget).get('name')).trim();try{await api('/api/v1/agencies',{method:'POST',body:JSON.stringify({name})});await startWorkspace();}catch(error){message('#agency-message',error.message,'error');}});
 $('#agency-select').addEventListener('change',async event=>{state.agency=state.agencies.find(a=>a.id===event.target.value)||null;state.view='overview';try{await loadWorkspace();}catch(error){message('#workspace-message',error.message,'error');}});
 $$('.nav-item').forEach(button=>button.addEventListener('click',()=>{show(button.dataset.view);if(button.dataset.view==='enquiries')loadEnquiries();if(button.dataset.view==='team')loadTeam();if(button.dataset.view==='billing')loadBilling();}));
@@ -123,5 +169,13 @@ $('#cancel-subscription').addEventListener('click',async()=>{if(!confirm('Schedu
 $('#invite-form').addEventListener('submit',async event=>{event.preventDefault();const data=new FormData(event.currentTarget);try{const result=await api('/api/v1/agencies/invitations',{method:'POST',body:JSON.stringify({email:String(data.get('email')).trim(),role:String(data.get('role'))})});$('#invite-result').textContent=`Invitation token (copy and deliver securely): ${result.data.token} · Expires ${new Date(result.data.expiresAt).toLocaleString()}`;$('#invite-result').className='notice success';event.currentTarget.reset();await loadTeam();}catch(error){message('#invite-result',error.message,'error');}});
 $('#team-list').addEventListener('change',async event=>{const userId=event.target.dataset.memberRole;if(!userId)return;try{await api(`/api/v1/agencies/members/${encodeURIComponent(userId)}`,{method:'PATCH',body:JSON.stringify({role:event.target.value})});await loadTeam();}catch(error){message('#workspace-message',error.message,'error');await loadTeam();}});
 $('#team-list').addEventListener('click',async event=>{const button=event.target.closest('[data-remove-member]');if(!button)return;if(!confirm('Remove this person from the agency?'))return;try{await api(`/api/v1/agencies/members/${encodeURIComponent(button.dataset.removeMember)}`,{method:'DELETE'});await loadTeam();}catch(error){message('#workspace-message',error.message,'error');}});
-if(state.token){startWorkspace().catch(error=>{sessionStorage.removeItem('sp_token');state.token='';$('#workspace-view').classList.add('hidden');$('#auth-view').classList.remove('hidden');message('#auth-message',error.message,'error');});}
-else setAuthMode(false);
+const recoveryParams=new URLSearchParams(window.location.search);
+if(recoveryParams.has('reset')){
+ showRecovery('reset-complete-form',recoveryParams.get('reset')||'');
+ history.replaceState({},'',window.location.pathname);
+}else if(recoveryParams.has('verify')){
+ showRecovery('verify-complete-form',recoveryParams.get('verify')||'');
+ history.replaceState({},'',window.location.pathname);
+}else if(state.token){
+ startWorkspace().catch(error=>{sessionStorage.removeItem('sp_token');state.token='';$('#workspace-view').classList.add('hidden');$('#auth-view').classList.remove('hidden');message('#auth-message',error.message,'error');});
+}else setAuthMode(false);

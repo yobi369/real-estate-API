@@ -311,7 +311,42 @@ export async function migrate(targetPool: pg.Pool | null = migrationPool): Promi
       END
       $tenancy_backfill$;
 
-      INSERT INTO schema_migrations(version) VALUES (1),(2),(3),(4),(5),(6) ON CONFLICT (version) DO NOTHING;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified_at timestamptz;
+      -- Existing accounts predate mandatory email verification. Preserve their access;
+      -- newly registered production accounts are created unverified.
+      UPDATE users SET email_verified_at=created_at WHERE email_verified_at IS NULL;
+      CREATE TABLE IF NOT EXISTS auth_email_tokens (
+        token_hash text PRIMARY KEY,
+        user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        purpose text NOT NULL CHECK (purpose IN ('password_reset','email_verification')),
+        expires_at timestamptz NOT NULL,
+        consumed_at timestamptz,
+        created_at timestamptz NOT NULL DEFAULT now()
+      );
+      CREATE INDEX IF NOT EXISTS auth_email_tokens_user_purpose_idx
+        ON auth_email_tokens (user_id,purpose,expires_at DESC) WHERE consumed_at IS NULL;
+      CREATE TABLE IF NOT EXISTS auth_login_attempts (
+        email_digest text PRIMARY KEY,
+        failed_attempts integer NOT NULL CHECK (failed_attempts >= 0),
+        locked_until timestamptz,
+        updated_at timestamptz NOT NULL DEFAULT now()
+      );
+      CREATE INDEX IF NOT EXISTS auth_login_attempts_locked_idx
+        ON auth_login_attempts (locked_until) WHERE locked_until IS NOT NULL;
+      DO $auth_security_runtime_grants$
+      DECLARE table_name text;
+      BEGIN
+        FOREACH table_name IN ARRAY ARRAY['auth_email_tokens','auth_login_attempts'] LOOP
+          IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname='secure_properties_runtime') THEN
+            EXECUTE format('GRANT SELECT,INSERT,UPDATE,DELETE ON TABLE %I.%I TO secure_properties_runtime',current_schema(),table_name);
+          END IF;
+          IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname='secure_properties_staging_app') THEN
+            EXECUTE format('GRANT SELECT,INSERT,UPDATE,DELETE ON TABLE %I.%I TO secure_properties_staging_app',current_schema(),table_name);
+          END IF;
+        END LOOP;
+      END
+      $auth_security_runtime_grants$;
+      INSERT INTO schema_migrations(version) VALUES (1),(2),(3),(4),(5),(6),(7),(8) ON CONFLICT (version) DO NOTHING;
     `);
     await client.query('COMMIT');
   } catch (error) {

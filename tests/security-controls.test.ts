@@ -23,12 +23,12 @@ describe('API security controls', () => {
     for (let attempt = 0; attempt < 10; attempt += 1) {
       const response = await request(app).post('/api/v1/auth/login')
         .set('X-Forwarded-For', forwarded(`203.0.113.${attempt + 1}`))
-        .send({ email: 'unknown@example.com', password: 'WrongPassword123' });
+        .send({ email: `unknown-${attempt}@example.com`, password: 'WrongPassword123' });
       expect(response.status).toBe(401);
     }
     const blocked = await request(app).post('/api/v1/auth/login')
       .set('X-Forwarded-For', forwarded('203.0.113.250'))
-      .send({ email: 'unknown@example.com', password: 'WrongPassword123' });
+      .send({ email: 'unknown-blocked@example.com', password: 'WrongPassword123' });
     expect(blocked.status).toBe(429);
     expect(blocked.body.error.code).toBe('RATE_LIMITED');
     expect(Number(blocked.headers['retry-after'])).toBeGreaterThan(0);
@@ -37,7 +37,7 @@ describe('API security controls', () => {
     for (let attempt = 0; attempt < 20; attempt += 1) {
       const repeated = await request(app).post('/api/v1/auth/login')
         .set('X-Forwarded-For', forwarded(`203.0.113.${100 + attempt}`))
-        .send({ email: 'unknown@example.com', password: 'WrongPassword123' });
+        .send({ email: `unknown-repeat-${attempt}@example.com`, password: 'WrongPassword123' });
       expect(repeated.status).toBe(429);
     }
     const addressDigest = createHmac('sha256', config.JWT_SECRET).update(ip).digest('hex');

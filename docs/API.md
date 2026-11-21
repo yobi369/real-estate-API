@@ -4,14 +4,18 @@ Base path: /api/v1. JSON responses use a data envelope for successful resource r
 
 ## Authentication
 
-- POST /api/v1/auth/register — create an account using email and password. Passwords require at least 12 characters with lowercase, uppercase, and a number. Returns a short-lived bearer token.
-- POST /api/v1/auth/login — authenticate with email and password. Returns a short-lived bearer token; default expiry is one hour. Each login creates a separately revocable server-side session.
+- POST /api/v1/auth/register — create an account using email and password. Passwords require at least 12 characters with lowercase, uppercase, and a number. Production returns 202 and sends a verification link; development/test may return a bearer token immediately.
+- POST /api/v1/auth/login — authenticate with a verified email and password. Returns a short-lived bearer token; default expiry is one hour. Five consecutive failures lock the account for 15 minutes. Each login creates a separately revocable server-side session.
+- POST /api/v1/auth/email-verification/request — request an email verification link without revealing whether an account exists.
+- POST /api/v1/auth/email-verification/complete — consume a one-time 24-hour verification token.
+- POST /api/v1/auth/password-reset/request — request a one-time password reset email. Returns the same 202 response whether or not the email exists. Requires the email provider settings.
+- POST /api/v1/auth/password-reset/complete — submit a reset token and new password. The 30-minute token is single-use; successful reset revokes all active sessions.
 - GET /api/v1/auth/sessions — list the account's active sessions and identify the current session.
 - DELETE /api/v1/auth/sessions/{sessionId} — revoke one active session belonging to the authenticated account. Other accounts' sessions cannot be revoked.
 - POST /api/v1/auth/logout — revoke the current bearer session immediately.
 - POST /api/v1/admin/bootstrap — one-time first administrator and default agency creation. Requires the x-bootstrap-token header and a temporary ADMIN_BOOTSTRAP_TOKEN configured in the environment. Remove the environment secret immediately after successful bootstrap. Returns 409 once an administrator exists.
 
-Email verification, password reset, refresh tokens, and account recovery are not implemented yet. Access tokens are stored as server-side sessions and can be individually revoked; revocation is checked on every authenticated request. Rotating JWT_SECRET invalidates all existing tokens globally.
+Refresh tokens are not implemented yet. Production registration requires email verification and the four settings EMAIL_API_URL, EMAIL_API_KEY, EMAIL_FROM, and PUBLIC_APP_URL configured together. Account lockout activates after five consecutive failed attempts for the normalized account email and lasts 15 minutes. The email transport uses a documented provider-neutral JSON request contract; adapt the provider endpoint to that contract. Access tokens are stored as server-side sessions and can be individually revoked; revocation is checked on every authenticated request. Rotating JWT_SECRET invalidates all existing tokens globally.
 
 ## Agency workspace and team
 
@@ -74,7 +78,7 @@ Plans are seeded inactive. Creating listings and inviting team members requires 
 
 - GET / — service discovery metadata.
 - GET /health/live — process liveness.
-- GET /health/ready — returns 200 only when PostgreSQL is reachable and schema version 5 plus all required tables are present; otherwise returns 503.
+- GET /health/ready — returns 200 only when PostgreSQL is reachable and schema version 8 plus all required tables are present; otherwise returns 503.
 - GET /openapi.json — OpenAPI 3.1 contract.
 - GET /docs/ — Swagger UI.
 
