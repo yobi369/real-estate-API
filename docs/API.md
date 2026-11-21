@@ -5,10 +5,13 @@ Base path: /api/v1. JSON responses use a data envelope for successful resource r
 ## Authentication
 
 - POST /api/v1/auth/register — create an account using email and password. Passwords require at least 12 characters with lowercase, uppercase, and a number. Returns a short-lived bearer token.
-- POST /api/v1/auth/login — authenticate with email and password. Returns a short-lived bearer token; default expiry is one hour.
+- POST /api/v1/auth/login — authenticate with email and password. Returns a short-lived bearer token; default expiry is one hour. Each login creates a separately revocable server-side session.
+- GET /api/v1/auth/sessions — list the account's active sessions and identify the current session.
+- DELETE /api/v1/auth/sessions/{sessionId} — revoke one active session belonging to the authenticated account. Other accounts' sessions cannot be revoked.
+- POST /api/v1/auth/logout — revoke the current bearer session immediately.
 - POST /api/v1/admin/bootstrap — one-time first administrator and default agency creation. Requires the x-bootstrap-token header and a temporary ADMIN_BOOTSTRAP_TOKEN configured in the environment. Remove the environment secret immediately after successful bootstrap. Returns 409 once an administrator exists.
 
-Email verification, password reset, refresh tokens, per-session revocation, and account recovery are not implemented yet. Rotating JWT_SECRET invalidates all existing tokens globally.
+Email verification, password reset, refresh tokens, and account recovery are not implemented yet. Access tokens are stored as server-side sessions and can be individually revoked; revocation is checked on every authenticated request. Rotating JWT_SECRET invalidates all existing tokens globally.
 
 ## Agency workspace and team
 
