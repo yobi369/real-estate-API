@@ -1,75 +1,66 @@
 # Real Estate API
 
-A documented TypeScript/Express REST API for property discovery and listing management, with a buyer-facing interactive demonstration using fictional Kenyan sample records.
+A documented TypeScript/Express REST API for property discovery and listing management, with a buyer-facing interactive demonstration using fictional Kenyan sample records and a multi-agency workspace for commercial property operators.
 
 ## Product demonstration
 
 After deployment, visit:
 
-- `/demo/` — interactive property search showcase (fictional sample records only).
-- `/console/` — authenticated agency workspace for private inventory, publication controls, enquiries and team access.
-- `/docs/` — Swagger UI.
-- `/openapi.json` — OpenAPI document.
-- `/health/live` — process liveness.
-- `/health/ready` — database readiness.
+- /demo/ — interactive property search showcase (fictional sample records only).
+- /console/ — authenticated agency workspace for private inventory, publication controls, enquiries, billing, and team access.
+- /docs/ — Swagger UI.
+- /openapi.json — OpenAPI document.
+- /health/live — process liveness.
+- /health/ready — database readiness.
 
-The demo inventory is isolated from customer listings. It is not a live marketplace and does not represent actual property offers, valuations or availability.
+The demo inventory is isolated from customer listings. It is not a live marketplace and does not represent actual property offers, valuations, or availability.
 
 ## Current engineering capabilities
 
-- Property create/read/search/update/delete endpoints with validation, bounded pagination, filtering and consistent errors.
-- PostgreSQL persistence with foreign-key/field constraints and indexes when `DATABASE_URL` is set; in-memory fallback is development/test only.
-- Email/password registration and login, scrypt password hashing, expiring HMAC-signed bearer tokens, administrator-only listing publication, one-time first-admin bootstrap, and owner/admin authorization for modifications.
-- Multi-agency tenancy with agency-scoped listing and enquiry access, email-bound invitations, owner/admin membership controls, and two-step recipient-accepted ownership transfer.
-- Public enquiry submission with PostgreSQL persistence and an agency-scoped owner/admin enquiry inbox.
-- PostgreSQL-backed distributed fixed-window rate limits for authentication, billing checkout, public search, and enquiries; production fails closed if the shared store is unavailable, and client IPs are stored as keyed HMAC digests rather than raw addresses.
-- Health/readiness checks, OpenAPI/Swagger, GitHub Actions CI on Node 22/24 with PostgreSQL 16, and documented production gates.
-- Read-only demo endpoint at `GET /demo/properties`, with city, type, transaction, price and text filters.
+- Property create/read/search/update/delete endpoints with validation, bounded pagination, filtering, publication lifecycle, and consistent errors.
+- PostgreSQL persistence with constraints, indexes, transactional schema migration, and a development/test-only in-memory adapter.
+- Email/password registration and login, scrypt password hashing, expiring HMAC-signed bearer tokens, and one-time secret-protected first-admin bootstrap.
+- Multi-agency tenancy with agency-scoped listing and enquiry access, email-bound invitations, role administration, audit events, and recipient-accepted ownership transfer.
+- PostgreSQL-backed distributed rate limits across authentication, M-Pesa checkout, public search, and enquiries; production fails closed if the shared store is unavailable, and client addresses are stored as keyed HMAC digests rather than raw IPs.
+- Agency subscription and payment ledger foundation, plan quotas, Daraja PayBill STK Push, idempotent payment attempts, callback validation, status-query reconciliation, and cancellation scheduling.
+- PostgreSQL-backed image uploads, health/readiness checks, OpenAPI/Swagger, and CI on Node.js 22/24/26 with PostgreSQL 16.
+- Encrypted PostgreSQL logical-backup and guarded restore scripts with a disposable PostgreSQL 16 backup/restore integration test in CI.
 
 ## Quick start
 
-```bash
-cp .env.example .env
-# Configure DATABASE_URL and replace JWT_SECRET with a random secret
-npm install
-npm run db:migrate
-npm run dev
-```
+    cp .env.example .env
+    # Configure DATABASE_URL and replace JWT_SECRET with a random secret
+    npm install
+    npm run db:migrate
+    npm run dev
 
-The API does not run schema DDL at startup. Run `npm run db:migrate` explicitly before starting the application. For production, provide a least-privilege `DATABASE_URL`, a separate privileged `MIGRATION_DATABASE_URL` to the one-off migration job, and a unique JWT secret. Set a temporary `ADMIN_BOOTSTRAP_TOKEN` (at least 32 characters) to create the first agency administrator through `POST /api/v1/admin/bootstrap`, then remove the token from the environment. Only administrators can publish listings. Without a database, readiness returns 503 and only the ephemeral development adapter is available.
+The API does not run schema DDL at startup. Run npm run db:migrate explicitly before starting the application. For production, provide a least-privilege DATABASE_URL, a separate privileged MIGRATION_DATABASE_URL to a controlled one-off migration job, and a unique JWT secret. Set a temporary ADMIN_BOOTSTRAP_TOKEN (at least 32 characters) to create the first agency administrator through POST /api/v1/admin/bootstrap, then remove the token from the environment. Without PostgreSQL, readiness returns 503 and only the ephemeral development adapter is available.
 
 ## Verify
 
-```bash
-npm run verify
-```
-
-## Commercial pilot
-
-See [the integration pilot proposal](docs/COMMERCIAL-PILOT-PROPOSAL.md) for the indicative scope, pricing and commercial boundaries.
+    npm run verify
 
 ## Agency billing foundation
 
-- `GET /api/v1/billing/plans` returns active subscription plans.
-- `GET /api/v1/billing/subscription` returns the selected agency's current subscription and recent payment history (owner/admin only; requires `X-Agency-ID`).
-- `POST /api/v1/billing/mpesa/stk-push` starts an idempotent Daraja checkout for an active plan (owner/admin only; requires `X-Agency-ID` and `Idempotency-Key`).
-- Daraja callbacks are accepted at the configured unguessable callback path; the payment is matched to the pending checkout, KES amount and receipt before the subscription is activated.
-- `POST /api/v1/billing/payments/{paymentId}/reconcile` performs an owner/admin-triggered STK status query when a callback is delayed or missing; confirmed status is applied idempotently.
-- `POST /api/v1/billing/subscription/cancel` schedules cancellation at the end of the current paid period.
-- Configure all `MPESA_*` settings together in the secret store. Callback URLs must be public HTTPS origins. The current STK adapter is PayBill-only. Till/Buy Goods collection needs a separately verified Daraja API flow.
-- Starter (KSh 2,500/month: 25 active listings, 3 team seats), Professional (KSh 5,000/month: 100 active listings, 10 team seats), and Business (KSh 12,000/month: 500 active listings, 30 team seats) are seeded as inactive plans. The API requires a current paid/trial subscription to create new listings or invite team members, and enforces the selected plan's listing and seat limits. Existing inventory remains stored and readable; no automatic free tier is promised. Listing counts include drafts and published listings but exclude archived listings; team seats include active memberships and unexpired pending invitations. Subscription/grace-period policy for expiry and access restoration remains a go-live decision. API request quotas and paid API access are not included. No Daraja credentials are configured in this repository, so sandbox/production end-to-end payment verification is still outstanding.
+Initial monthly prices and allowances are Starter KSh 2,500 (25 listings/3 team seats), Professional KSh 5,000 (100 listings/10 seats), and Business KSh 12,000 (500 listings/30 seats). Plans are seeded inactive and must not be activated until commercial terms and payment acceptance gates are approved.
+
+The API requires a current paid/trial subscription to create new listings or invite team members. Draft and published listings count toward listing limits; archived listings do not. Active memberships and unexpired pending invitations consume team seats.
+
+Daraja integration currently supports customer-to-business PayBill STK Push. Payment attempts are idempotent; subscriptions activate only after a verified callback or status query matches the expected checkout and amount. Sandbox credentials, production PayBill onboarding, and end-to-end provider testing remain outstanding. Till/Buy Goods, refunds, API-key issuance, usage metering, and paid API access are not implemented.
 
 ## Production deployment
 
-See [the production-readiness checklist](docs/PRODUCTION-READINESS.md) before using customer or personal data. The public demo is not a production customer environment. The agency console is a product workflow foundation; billing, automated invitation email, and production customer onboarding remain separate release gates.
+See docs/PRODUCTION-READINESS.md before using customer or personal data. The public demo is not a production customer environment. The agency workspace and billing foundations are implemented, but provider acceptance, identity lifecycle controls, independent security assurance, backup/restore operations, infrastructure, and customer onboarding remain release gates.
 
 ## Technical documentation
 
-- [Architecture](docs/ARCHITECTURE.md)
-- [API contract](docs/API.md)
-- [Security model](docs/SECURITY.md)
-- [Testing](docs/TESTING.md)
-- [Deployment](docs/DEPLOYMENT.md)
-- [Quality evidence](docs/QUALITY-EVIDENCE.md)
-- [M-Pesa integration](docs/MPESA-INTEGRATION.md)
-- [Changelog](CHANGELOG.md)
+- docs/ARCHITECTURE.md
+- docs/API.md
+- docs/SECURITY.md
+- docs/TESTING.md
+- docs/DEPLOYMENT.md
+- docs/PRODUCTION-READINESS.md
+- docs/POSTGRES-OPERATIONS.md
+- docs/MPESA-INTEGRATION.md
+- docs/QUALITY-EVIDENCE.md
+- CHANGELOG.md
