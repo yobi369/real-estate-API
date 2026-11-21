@@ -48,6 +48,36 @@ export async function migrate(targetPool: pg.Pool | null = migrationPool): Promi
       );
       CREATE INDEX IF NOT EXISTS auth_sessions_user_active_idx
         ON auth_sessions (user_id,expires_at DESC) WHERE revoked_at IS NULL;
+      CREATE TABLE IF NOT EXISTS auth_email_tokens (
+        token_hash text PRIMARY KEY,
+        user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        purpose text NOT NULL CHECK (purpose IN ('password_reset','email_verification')),
+        expires_at timestamptz NOT NULL,
+        consumed_at timestamptz,
+        created_at timestamptz NOT NULL DEFAULT now()
+      );
+      CREATE INDEX IF NOT EXISTS auth_email_tokens_user_purpose_idx
+        ON auth_email_tokens (user_id,purpose,expires_at DESC) WHERE consumed_at IS NULL;
+      CREATE TABLE IF NOT EXISTS auth_login_attempts (
+        email_digest text PRIMARY KEY,
+        failed_attempts integer NOT NULL CHECK (failed_attempts >= 0),
+        locked_until timestamptz,
+        updated_at timestamptz NOT NULL DEFAULT now()
+      );
+      CREATE INDEX IF NOT EXISTS auth_login_attempts_locked_idx
+        ON auth_login_attempts (locked_until) WHERE locked_until IS NOT NULL;
+      DO $identity_runtime_grants$
+      BEGIN
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname='secure_properties_runtime') THEN
+          EXECUTE format('GRANT SELECT,INSERT,UPDATE,DELETE ON TABLE %I.auth_email_tokens TO secure_properties_runtime',current_schema());
+          EXECUTE format('GRANT SELECT,INSERT,UPDATE,DELETE ON TABLE %I.auth_login_attempts TO secure_properties_runtime',current_schema());
+        END IF;
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname='secure_properties_staging_app') THEN
+          EXECUTE format('GRANT SELECT,INSERT,UPDATE,DELETE ON TABLE %I.auth_email_tokens TO secure_properties_staging_app',current_schema());
+          EXECUTE format('GRANT SELECT,INSERT,UPDATE,DELETE ON TABLE %I.auth_login_attempts TO secure_properties_staging_app',current_schema());
+        END IF;
+      END
+      $identity_runtime_grants$;
       DO $auth_session_runtime_grants$
       BEGIN
         IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname='secure_properties_runtime') THEN
@@ -311,7 +341,7 @@ export async function migrate(targetPool: pg.Pool | null = migrationPool): Promi
       END
       $tenancy_backfill$;
 
-      INSERT INTO schema_migrations(version) VALUES (1),(2),(3),(4),(5),(6) ON CONFLICT (version) DO NOTHING;
+      INSERT INTO schema_migrations(version) VALUES (1),(2),(3),(4),(5),(6),(7) ON CONFLICT (version) DO NOTHING;
     `);
     await client.query('COMMIT');
   } catch (error) {
