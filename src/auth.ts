@@ -124,7 +124,8 @@ export async function completePasswordReset(input:unknown):Promise<boolean>{
    await client.query('UPDATE users SET password_hash=$1 WHERE id=$2',[passwordHash,userId]);
    await client.query('UPDATE auth_email_tokens SET consumed_at=now() WHERE token_hash=$1',[tokenHash]);
    await client.query('UPDATE auth_sessions SET revoked_at=now() WHERE user_id=$1 AND revoked_at IS NULL',[userId]);
-   await client.query('DELETE FROM auth_login_attempts WHERE email_digest=(SELECT encode(hmac(convert_to(lower(email),'UTF8'),convert_to($1,'UTF8'),'sha256'),'hex') FROM users WHERE id=$2)',[config.JWT_SECRET,userId]);
+   const account=await client.query<{email:string}>('SELECT email FROM users WHERE id=$1',[userId]);
+   if(account.rows[0])await client.query('DELETE FROM auth_login_attempts WHERE email_digest=$1',[digestAccount(account.rows[0].email)]);
    await client.query('COMMIT');return true;
   }catch(error){await client.query('ROLLBACK');throw error;}finally{client.release();}
  }
