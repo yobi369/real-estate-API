@@ -9,6 +9,8 @@ export type Role='user'|'admin';
 export type Principal={id:string,email:string,role:Role};
 type TokenClaims={sub:string;email:string;role:Role;iat:number;exp:number;jti:string};
 type SessionRecord={principal:Principal;createdAt:string;expiresAt:string;revokedAt:string|null};
+// Express request augmentation uses TypeScript declaration merging.
+// eslint-disable-next-line @typescript-eslint/no-namespace
 declare global { namespace Express { interface Request { principal?: Principal; authSessionId?: string } } }
 const registration=z.object({email:z.string().trim().email().max(254).transform(v=>v.toLowerCase()),password:z.string().min(12).max(128).regex(/[a-z]/,'Password must include a lowercase letter').regex(/[A-Z]/,'Password must include an uppercase letter').regex(/[0-9]/,'Password must include a number')}).strict();
 const loginSchema=z.object({email:z.string().trim().email().max(254).transform(v=>v.toLowerCase()),password:z.string().min(1).max(128)}).strict();
