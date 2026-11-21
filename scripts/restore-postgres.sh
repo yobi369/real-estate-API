@@ -25,31 +25,11 @@ test -f "$BACKUP_FILE.sha256" || { echo "Backup checksum file not found" >&2; ex
   sha256sum --check "$(basename "$BACKUP_FILE").sha256"
 )
 
-# Never drop or clean an existing schema. Reject relations, routines, types,
-# and non-default schemas so the restore target is genuinely disposable.
-object_count="$(psql "$TARGET_DATABASE_URL" -X -v ON_ERROR_STOP=1 -Atqc "
-  SELECT count(*) FROM (
-    SELECT c.oid
-    FROM pg_class c
-    JOIN pg_namespace n ON n.oid = c.relnamespace
-    WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
-      AND c.relkind IN ('r', 'p', 'v', 'm', 'S', 'f')
-    UNION
-    SELECT p.oid
-    FROM pg_proc p
-    JOIN pg_namespace n ON n.oid = p.pronamespace
-    WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
-    UNION
-    SELECT t.oid
-    FROM pg_type t
-    JOIN pg_namespace n ON n.oid = t.typnamespace
-    WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
-    UNION
-    SELECT n.oid
-    FROM pg_namespace n
-    WHERE n.nspname NOT IN ('pg_catalog', 'information_schema', 'public')
-  ) AS user_objects
-")"
+# Never drop or clean an existing schema. The SQL guard is shared with CI tests.
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+guard_sql="$script_dir/restore-target-guard.sql"
+test -f "$guard_sql" || { echo "Restore target guard SQL file is missing" >&2; exit 1; }
+object_count="$(psql "$TARGET_DATABASE_URL" -X -v ON_ERROR_STOP=1 -Atq -f "$guard_sql")"
 
 if [[ ! "$object_count" =~ ^[0-9]+$ ]] || [[ "$object_count" -ne 0 ]]; then
   echo "Refusing restore: target database contains $object_count user objects" >&2
