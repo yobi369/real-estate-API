@@ -19,8 +19,8 @@ import { initiateStkPush,isMpesaConfigured,normalizeKenyanPhone,parseStkCallback
 import { z } from 'zod';
 import { demoProperties } from './demo-data.js';
 import { pool } from './db.js';
-import { authenticate,bootstrapAdmin,loginUser,registerUser,listAuthSessions,revokeAuthSession,createPasswordResetToken,completePasswordReset } from './auth.js';
-import { sendPasswordResetEmail,isEmailDeliveryConfigured } from './services/email.js';
+import { authenticate,bootstrapAdmin,loginUser,registerUser,listAuthSessions,revokeAuthSession,createPasswordResetToken,completePasswordReset,createEmailVerificationToken,completeEmailVerification } from './auth.js';
+import { sendPasswordResetEmail,sendEmailVerificationEmail,isEmailDeliveryConfigured } from './services/email.js';
 import { createRateLimiter } from './rate-limit.js';
 const require = createRequire(import.meta.url);
 type PinoHttpOptions = { level: string; genReqId: (req: express.Request, res: express.Response) => string; redact: string[] };
@@ -58,6 +58,8 @@ const authRegisterRateLimit=createRateLimiter({namespace:'auth-register',windowM
 const authLoginRateLimit=createRateLimiter({namespace:'auth-login',windowMs:15*60*1000,max:10});
 const passwordResetRequestRateLimit=createRateLimiter({namespace:'password-reset-request',windowMs:15*60*1000,max:5});
 const passwordResetCompleteRateLimit=createRateLimiter({namespace:'password-reset-complete',windowMs:15*60*1000,max:10});
+const emailVerificationRequestRateLimit=createRateLimiter({namespace:'email-verification-request',windowMs:15*60*1000,max:5});
+const emailVerificationCompleteRateLimit=createRateLimiter({namespace:'email-verification-complete',windowMs:15*60*1000,max:10});
 const billingCheckoutRateLimit=createRateLimiter({namespace:'billing-checkout',windowMs:15*60*1000,max:5});
 const publicSearchRateLimit=createRateLimiter({namespace:'public-search',windowMs:60*1000,max:120});
 const inquiryRateLimit=createRateLimiter({namespace:'public-inquiry',windowMs:15*60*1000,max:10});
@@ -80,6 +82,8 @@ const spec={
   '/api/v1/admin/bootstrap':{post:{tags:['Authentication'],summary:'Create the first administrator once using a bootstrap secret',parameters:[{name:'x-bootstrap-token',in:'header',required:true,schema:{type:'string'}}],requestBody:{required:true,content:{'application/json':{schema:{type:'object',required:['email','password'],properties:{email:{type:'string',format:'email'},password:{type:'string',minLength:12}}}}}},responses:{'201':{description:'Administrator created'},'404':{description:'Bootstrap unavailable'},'409':{description:'An administrator already exists'}}}},
   '/api/v1/auth/register':{post:{tags:['Authentication'],summary:'Register a listing operator',requestBody:{required:true,content:{'application/json':{schema:{type:'object',required:['email','password'],properties:{email:{type:'string',format:'email'},password:{type:'string',minLength:12}}}}}},responses:{'201':{description:'Account created'},'400':{description:'Invalid registration input'},'409':{description:'Email already registered'}}}},
   '/api/v1/auth/login':{post:{tags:['Authentication'],summary:'Authenticate a listing operator',requestBody:{required:true,content:{'application/json':{schema:{type:'object',required:['email','password'],properties:{email:{type:'string',format:'email'},password:{type:'string'}}}}}},responses:{'200':{description:'Authenticated'},'401':{description:'Invalid credentials'}}}},
+  '/api/v1/auth/email-verification/request':{post:{tags:['Authentication'],summary:'Request an email verification link without revealing account existence',responses:{'202':{description:'Request accepted'},'400':{description:'Invalid email'},'503':{description:'Email delivery unavailable'}}}},
+  '/api/v1/auth/email-verification/complete':{post:{tags:['Authentication'],summary:'Verify an email address using a one-time token',responses:{'204':{description:'Email verified'},'400':{description:'Invalid, expired, or used token'}}}},
   '/api/v1/auth/password-reset/request':{post:{tags:['Authentication'],summary:'Request password reset instructions without revealing account existence',responses:{'202':{description:'Request accepted'},'400':{description:'Invalid email'},'503':{description:'Email delivery unavailable'}}}},
   '/api/v1/auth/password-reset/complete':{post:{tags:['Authentication'],summary:'Complete a one-time password reset and revoke all active sessions',responses:{'204':{description:'Password changed'},'400':{description:'Invalid, expired, or used token'},'503':{description:'Recovery unavailable'}}}},
   '/api/v1/auth/logout':{post:{tags:['Authentication'],summary:'Revoke the current bearer session',security:[{bearerAuth:[]}],responses:{'204':{description:'Session revoked'},'401':{description:'Authentication required'},'503':{description:'Session store unavailable'}}}},
@@ -117,7 +121,36 @@ app.get('/health/ready',async(_req,res)=>{if(!pool)return res.status(503).json({
 app.get('/demo/properties',publicSearchRateLimit,(req,res)=>{const parsed=propertyQuerySchema.safeParse(req.query);if(!parsed.success)return res.status(400).json({error:{code:'VALIDATION_ERROR',message:'Query parameters are invalid'}});const q=parsed.data;const needle=q.search?.toLocaleLowerCase();const matches=demoProperties.filter(p=>(!q.city||p.city.toLocaleLowerCase()===q.city.toLocaleLowerCase())&&(!q.propertyType||p.propertyType===q.propertyType)&&(!q.transactionType||p.transactionType===q.transactionType)&&(q.minPrice===undefined||p.price>=q.minPrice)&&(q.maxPrice===undefined||p.price<=q.maxPrice)&&(!needle||`${p.title} ${p.description} ${p.city}`.toLocaleLowerCase().includes(needle))).sort((a,b)=>b.createdAt.localeCompare(a.createdAt));const start=(q.page-1)*q.limit;return res.json({data:{items:matches.slice(start,start+q.limit),total:matches.length,page:q.page,limit:q.limit,notice:'Fictional sample data for demonstration only. Not live property listings.'}});});
 app.get('/openapi.json',(_req,res)=>res.json(spec));app.use('/docs',swaggerUi.serve,swaggerUi.setup(spec));
 app.post('/api/v1/admin/bootstrap',authBootstrapRateLimit,async(req,res)=>{const result=await bootstrapAdmin(req.body,req.header('x-bootstrap-token')??'');if('error'in result){const status=result.error==='DISABLED'?404:result.error==='EXISTS'?409:400;return res.status(status).json({error:{code:result.error,message:result.error==='DISABLED'?'Bootstrap is unavailable':result.error==='EXISTS'?'An administrator already exists':'Administrator details are invalid'}});}return res.status(201).json({data:{user:result.principal,token:result.token,tokenType:'Bearer',expiresIn:config.JWT_TTL_SECONDS}});});
-app.post('/api/v1/auth/register',authRegisterRateLimit,async(req,res)=>{const result=await registerUser(req.body);if('error'in result)return res.status(result.error==='EXISTS'?409:400).json({error:{code:result.error==='EXISTS'?'EMAIL_EXISTS':'VALIDATION_ERROR',message:result.error==='EXISTS'?'An account with this email already exists':'Email or password does not meet requirements'}});return res.status(201).json({data:{user:result.principal,token:result.token,tokenType:'Bearer',expiresIn:config.JWT_TTL_SECONDS}});});
+app.post('/api/v1/auth/register',authRegisterRateLimit,async(req,res)=>{
+ const requireVerification=config.NODE_ENV==='production';
+ if(requireVerification&&!isEmailDeliveryConfigured())return res.status(503).json({error:{code:'EMAIL_DELIVERY_UNAVAILABLE',message:'Registration requires a configured verified email sender'}});
+ const result=await registerUser(req.body,requireVerification);
+ if('error'in result)return res.status(result.error==='EXISTS'?409:400).json({error:{code:result.error==='EXISTS'?'EMAIL_EXISTS':'VALIDATION_ERROR',message:result.error==='EXISTS'?'An account with this email already exists':'Email or password does not meet requirements'}});
+ if('verificationToken'in result){
+  try{await sendEmailVerificationEmail(result.principal.email,result.verificationToken);}
+  catch(error){app.emit('application-error',error);return res.status(503).json({error:{code:'EMAIL_DELIVERY_FAILED',message:'Account created. Request a new verification email before signing in.'}});}
+  return res.status(202).json({data:{user:result.principal,message:'Account created. Verify your email address before signing in.'}});
+ }
+ return res.status(201).json({data:{user:result.principal,token:result.token,tokenType:'Bearer',expiresIn:config.JWT_TTL_SECONDS}});
+});
+app.post('/api/v1/auth/email-verification/request',emailVerificationRequestRateLimit,async(req,res)=>{
+ const parsed=z.object({email:z.string().trim().email().max(254)}).strict().safeParse(req.body);
+ if(!parsed.success)return res.status(400).json({error:{code:'VALIDATION_ERROR',message:'A valid email address is required'}});
+ if(!isEmailDeliveryConfigured())return res.status(503).json({error:{code:'EMAIL_DELIVERY_UNAVAILABLE',message:'Email delivery is not configured for this environment'}});
+ try{
+  const user=await pool?.query<{id:string,email:string,email_verified_at:Date|null}>('SELECT id,email,email_verified_at FROM users WHERE email=$1',[parsed.data.email.toLowerCase()]);
+  if(user?.rows[0]&&!user.rows[0].email_verified_at){
+   const token=await createEmailVerificationToken(user.rows[0].id);
+   try{await sendEmailVerificationEmail(user.rows[0].email,token);}catch(error){app.emit('application-error',error);}
+  }
+  return res.status(202).json({data:{message:'If the account requires verification, instructions will be sent.'}});
+ }catch{return res.status(503).json({error:{code:'EMAIL_VERIFICATION_UNAVAILABLE',message:'Email verification is temporarily unavailable'}});}
+});
+app.post('/api/v1/auth/email-verification/complete',emailVerificationCompleteRateLimit,async(req,res)=>{
+ const parsed=z.object({token:z.string().min(32).max(128)}).strict().safeParse(req.body);
+ if(!parsed.success)return res.status(400).json({error:{code:'VALIDATION_ERROR',message:'A valid verification token is required'}});
+ try{const verified=await completeEmailVerification(parsed.data.token);return verified?res.status(204).end():res.status(400).json({error:{code:'VERIFICATION_TOKEN_INVALID',message:'The verification link is invalid, expired, or already used'}});}catch{return res.status(503).json({error:{code:'EMAIL_VERIFICATION_UNAVAILABLE',message:'Email verification is temporarily unavailable'}});}
+});
 app.post('/api/v1/auth/password-reset/request',passwordResetRequestRateLimit,async(req,res)=>{
  const parsed=z.object({email:z.string().trim().email().max(254)}).strict().safeParse(req.body);
  if(!parsed.success)return res.status(400).json({error:{code:'VALIDATION_ERROR',message:'A valid email address is required'}});
@@ -133,7 +166,7 @@ app.post('/api/v1/auth/password-reset/complete',passwordResetCompleteRateLimit,a
  if(!parsed.success)return res.status(400).json({error:{code:'VALIDATION_ERROR',message:'A valid reset token and password are required'}});
  try{const completed=await completePasswordReset(parsed.data.token,parsed.data.password);return completed?res.status(204).end():res.status(400).json({error:{code:'RESET_TOKEN_INVALID',message:'The reset link is invalid, expired, or already used'}});}catch{return res.status(503).json({error:{code:'PASSWORD_RESET_UNAVAILABLE',message:'Password recovery is temporarily unavailable'}});}
 });
-app.post('/api/v1/auth/login',authLoginRateLimit,async(req,res)=>{const result=await loginUser(req.body);if(!result)return res.status(401).json({error:{code:'INVALID_CREDENTIALS',message:'Email or password is incorrect'}});return res.json({data:{user:result.principal,token:result.token,tokenType:'Bearer',expiresIn:config.JWT_TTL_SECONDS}});});
+app.post('/api/v1/auth/login',authLoginRateLimit,async(req,res)=>{const result=await loginUser(req.body);if(!result)return res.status(401).json({error:{code:'INVALID_CREDENTIALS',message:'Email or password is incorrect'}});if('error'in result)return res.status(result.error==='LOCKED'?429:403).json({error:{code:result.error==='LOCKED'?'ACCOUNT_TEMPORARILY_LOCKED':'EMAIL_VERIFICATION_REQUIRED',message:result.error==='LOCKED'?'Too many unsuccessful attempts. Try again later.':'Verify your email address before signing in.'}});return res.json({data:{user:result.principal,token:result.token,tokenType:'Bearer',expiresIn:config.JWT_TTL_SECONDS}});});
 app.get('/api/v1/auth/sessions',authenticate,async(req,res)=>{try{return res.json({data:{items:await listAuthSessions(req.principal!.id,req.authSessionId!)}});}catch{return res.status(503).json({error:{code:'AUTHENTICATION_STORE_UNAVAILABLE',message:'Session inventory is temporarily unavailable'}});}});
 app.post('/api/v1/auth/logout',authenticate,async(req,res)=>{try{const revoked=await revokeAuthSession(req.principal!.id,req.authSessionId!);return revoked?res.status(204).end():res.status(401).json({error:{code:'UNAUTHENTICATED',message:'The current session is no longer active'}});}catch{return res.status(503).json({error:{code:'AUTHENTICATION_STORE_UNAVAILABLE',message:'Session revocation is temporarily unavailable'}});}});
 app.delete('/api/v1/auth/sessions/:sessionId',authenticate,async(req,res)=>{const id=z.string().uuid().safeParse(req.params.sessionId);if(!id.success)return res.status(404).json({error:{code:'SESSION_NOT_FOUND',message:'Session was not found'}});try{const revoked=await revokeAuthSession(req.principal!.id,id.data);return revoked?res.status(204).end():res.status(404).json({error:{code:'SESSION_NOT_FOUND',message:'Active session was not found for this account'}});}catch{return res.status(503).json({error:{code:'AUTHENTICATION_STORE_UNAVAILABLE',message:'Session revocation is temporarily unavailable'}});}});
