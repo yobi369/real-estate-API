@@ -51,7 +51,7 @@ export async function migrate(targetPool: pg.Pool | null = migrationPool): Promi
       DO $auth_session_runtime_grants$
       BEGIN
         IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname='secure_properties_runtime') THEN
-          EXECUTE 'GRANT SELECT,INSERT,UPDATE,DELETE ON TABLE public.auth_sessions TO secure_properties_runtime';
+          EXECUTE format('GRANT SELECT,INSERT,UPDATE,DELETE ON TABLE %I.auth_sessions TO secure_properties_runtime',current_schema());
         END IF;
       END
       $auth_session_runtime_grants$;
@@ -254,7 +254,7 @@ export async function migrate(targetPool: pg.Pool | null = migrationPool): Promi
       DO $rate_limit_runtime_grants$
       BEGIN
         IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname='secure_properties_runtime') THEN
-          EXECUTE 'GRANT SELECT,INSERT,UPDATE,DELETE ON TABLE public.api_rate_limit_buckets TO secure_properties_runtime';
+          EXECUTE format('GRANT SELECT,INSERT,UPDATE,DELETE ON TABLE %I.api_rate_limit_buckets TO secure_properties_runtime',current_schema());
         END IF;
       END
       $rate_limit_runtime_grants$;
