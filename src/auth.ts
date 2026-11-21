@@ -16,7 +16,7 @@ const registration=z.object({email:z.string().trim().email().max(254).transform(
 const loginSchema=z.object({email:z.string().trim().email().max(254).transform(v=>v.toLowerCase()),password:z.string().min(1).max(128)}).strict();
 const memoryUsers=new Map<string,{id:string,email:string,passwordHash:string,role:Role}>();
 const memorySessions=new Map<string,SessionRecord>();
-const memoryLoginAttempts=new Map<string,{failed:number;lockedUntil:number}>();
+const memoryLoginAttempts=new Map<string,{failed:number;windowStartedAt:number;lockedUntil:number}>();
 async function hashPassword(password:string):Promise<string>{const salt=randomUUID().replaceAll('-','');const key=await scrypt(password,salt,64) as Buffer;return salt+':'+key.toString('hex');}
 async function verifyPassword(password:string,stored:string):Promise<boolean>{const [salt,hex]=stored.split(':');if(!salt||!hex||!/^[a-f0-9]{128}$/i.test(hex))return false;const expected=Buffer.from(hex,'hex');const actual=await scrypt(password,salt,expected.length) as Buffer;return actual.length===expected.length&&timingSafeEqual(actual,expected);}
 function signToken(principal:Principal,sessionId:string,expiresAt:number):string{const b64=(v:unknown)=>Buffer.from(JSON.stringify(v)).toString('base64url');const now=Math.floor(Date.now()/1000);const header=b64({alg:'HS256',typ:'JWT'});const payload=b64({sub:principal.id,email:principal.email,role:principal.role,iat:now,exp:expiresAt,jti:sessionId});const body=header+'.'+payload;return body+'.'+createHmac('sha256',config.JWT_SECRET).update(body).digest('base64url');}
@@ -119,8 +119,12 @@ export async function loginUser(input:unknown):Promise<{principal:Principal,toke
  const attempt=memoryLoginAttempts.get(emailDigest);
  if(attempt&&attempt.lockedUntil>Date.now())return {error:'LOCKED'};
  if(!found||!(await verifyPassword(password,found.passwordHash))){
-  const failed=attempt&&Date.now()-attempt.lockedUntil<15*60*1000?attempt.failed+1:1;
-  memoryLoginAttempts.set(emailDigest,{failed,lockedUntil:failed>=5?Date.now()+15*60*1000:0});
+  const now=Date.now();
+  const withinWindow=Boolean(attempt&&now-attempt.windowStartedAt<15*60*1000);
+  const failed=withinWindow?attempt!.failed+1:1;
+  const windowStartedAt=withinWindow?attempt!.windowStartedAt:now;
+  const lockedUntil=failed>=5?now+15*60*1000:0;
+  memoryLoginAttempts.set(emailDigest,{failed,windowStartedAt,lockedUntil});
   return failed>=5?{error:'LOCKED'}:null;
  }
  memoryLoginAttempts.delete(emailDigest);
